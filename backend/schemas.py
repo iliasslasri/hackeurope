@@ -49,6 +49,10 @@ class PatientHistory(BaseModel):
     medications: list[str] = Field(default_factory=list)
     relevant_history: Optional[str] = None
 
+    def to_json(self) -> str:
+        """Convert the PatientHistory object to a JSON string."""
+        return self.model_dump_json(indent=2, ensure_ascii=False)
+
 
 # ---------------------------------------------------------------------------
 # Strategist output
