@@ -1,0 +1,17 @@
+# Node/Python Environments
+.env
+.venv/
+venv/
+__pycache__/
+
+# Secrets
+.env.local
+.env.*.local
+
+# IDEs
+.idea/
+.vscode/
+
+# Streamlit
+streamlit_output.log
+streamlit.pid
