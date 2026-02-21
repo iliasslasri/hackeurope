@@ -281,3 +281,62 @@ class SemanticIndex:
             mtype = "exact" if s >= HIGH_THRESHOLD else "partial" if s >= LOW_THRESHOLD else "miss"
             out.append((self._phrases[i], s, mtype))
         return out
+    def extract_symptoms_from_question(
+        self,
+        question_text: str,
+        k: int = 6,
+        threshold: float = 0.45,
+    ) -> List[Tuple[str, float]]:
+        """
+        Given a question text, return the symptom phrases it is asking about.
+
+        Uses semantic similarity: embed the full question, then find all
+        known symptom phrases whose cosine similarity to the question
+        exceeds `threshold`.  Returns up to `k` phrases ranked by similarity.
+
+        Examples
+        --------
+        "Do you have chest pain or shortness of breath?"
+          → [("chest pain", 0.91), ("shortness of breath", 0.87)]
+
+        "Tell me about your breathing and any coughing"
+          → [("shortness of breath", 0.82), ("cough", 0.79), ("wheezing", 0.61)]
+
+        "How is your energy level lately, any fatigue?"
+          → [("fatigue", 0.88), ("malaise", 0.65)]
+
+        "When did this start?"           (temporal / open question)
+          → []   (no symptom above threshold)
+
+        Parameters
+        ----------
+        question_text : raw question string (not yet normalised)
+        k             : max number of symptoms to return
+        threshold     : min cosine similarity (0.45 works well for TF-IDF,
+                        0.55 recommended with PubMedBERT)
+
+        Returns
+        -------
+        List of (symptom_phrase, similarity_score) sorted by score descending.
+        """
+        if self._vecs is None or len(self._vecs) == 0:
+            return []
+
+        # Embed the question as a whole
+        q_norm = _normalise(question_text)
+        try:
+            q_vec  = self._backend.embed([q_norm])[0]
+        except Exception:
+            return []
+
+        # Cosine similarity against every known symptom phrase
+        sims = self._vecs @ q_vec   # (N,)
+
+        # Collect all above threshold, take top-k
+        hits = [
+            (self._phrases[i], float(sims[i]))
+            for i in range(len(self._phrases))
+            if sims[i] >= threshold
+        ]
+        hits.sort(key=lambda x: -x[1])
+        return hits[:k]
