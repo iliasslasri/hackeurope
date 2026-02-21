@@ -10,7 +10,7 @@ from streamlit_webrtc import webrtc_streamer, WebRtcMode
 
 import data
 from backend.schemas import AuraUIPayload, DDxEntry, DiseaseQuestions
-from backend.agents import AuraPipeline
+from backend.main_agent import AuraPipeline
 from backend.audio_processing import AudioStreamingProcessor
 
 load_dotenv()

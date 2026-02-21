@@ -4,9 +4,7 @@ import queue
 import wave
 import requests
 import av
-import torch
 import numpy as np
-from scipy.spatial.distance import cdist
 import websocket
 import json
 import threading

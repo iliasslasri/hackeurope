@@ -16,8 +16,6 @@ import os
 import pandas as pd
 import numpy as np
 from typing import Optional
-from datasets import load_dataset, Dataset
-from huggingface_hub import hf_hub_download, list_repo_files
 
 
 # ---------------------------------------------------------------------------
@@ -174,16 +172,15 @@ def try_load_huggingface_dataset() -> Optional[pd.DataFrame]:
     Returns None if the library or network is unavailable.
     """
     try:
-        
-        # ds = load_dataset("QuyenAnhDE/Diseases_Symptoms")
-        # df = ds.to_pandas()
-        # Normalise columns: expects 'Name', 'Symptoms' columns
+        from datasets import Dataset  # noqa: F401
+        from huggingface_hub import hf_hub_download, list_repo_files
+
         repo = os.getenv("REPO", "QuyenAnhDE/Diseases_Symptoms")
         files = list_repo_files(repo, repo_type="dataset")
         csv_name = [f for f in files if f.endswith(".csv")][0]
 
         csv_path = hf_hub_download(repo_id=repo, filename=csv_name, repo_type="dataset")
-        df = pd.read_csv(csv_path)          # no mangle_dupe_cols passed
+        df = pd.read_csv(csv_path)
         ds = Dataset.from_pandas(df)
         df = df.rename(columns={"Name": "disease", "Symptoms": "symptoms_raw"})
         df["symptoms"] = df["symptoms_raw"].apply(
