@@ -1,4 +1,3 @@
-
 from backend.schemas import PatientHistory
 from backend.llm_client import call_llm
 from backend.prompts import INFORMATION_EXTRACTOR_SYSTEM, QUESTION_GENIE_SYSTEM, QUESTION_GENIE_USER_TEMPLATE
