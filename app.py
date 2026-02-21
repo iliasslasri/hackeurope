@@ -1,6 +1,8 @@
 import os
+import base64
 import requests
 import streamlit as st
+from streamlit.components.v1 import html as st_html
 from dotenv import load_dotenv
 import data
 from assistant import analyze_consultation
@@ -37,6 +39,10 @@ if "current_patient_id" not in st.session_state:
     st.session_state.current_patient_id = "P001"
 if "speaker_mode" not in st.session_state:
     st.session_state.speaker_mode = "Doctor"
+if "recording_active" not in st.session_state:
+    st.session_state.recording_active = False
+if "audio_b64" not in st.session_state:
+    st.session_state.audio_b64 = None
 
 active_patient = data.get_patient_by_id(st.session_state.current_patient_id)
 
@@ -96,11 +102,11 @@ html, body, * , [class*="css"] {
 }
 
 /* ── Transcript Container ──────────────────────────────────────────────────── */
-/* bg-white border border-slate-200 rounded-t-xl p-6 shadow-sm */
+/* bg-white border border-slate-200 rounded-xl p-6 shadow-sm */
 .transcript-panel {
     background: #ffffff;
     border: 1px solid #e2e8f0;
-    border-radius: 0.75rem 0.75rem 0 0;
+    border-radius: 0.75rem;
     padding: 1.5rem;
     min-height: 380px;
     max-height: 420px;
@@ -111,17 +117,6 @@ html, body, * , [class*="css"] {
     box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
 }
 
-/* ── Form (bottom of transcript card) — bg-white border-t-0 rounded-b-xl ──── */
-[data-testid="stForm"] {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-top: none !important;
-    border-radius: 0 0 0.75rem 0.75rem !important;
-    padding: 1rem !important;
-    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05) !important;
-    margin-top: -1rem !important;
-    margin-bottom: 0.75rem !important;
-}
 
 /* ── Chat Messages ─────────────────────────────────────────────────────────── */
 /* flex gap-4 */
@@ -352,66 +347,38 @@ html, body, * , [class*="css"] {
     font-size: 0.9375rem;
 }
 
-/* ── Popover (Voice Input) ─────────────────────────────────────────────────── */
-[data-testid="stPopover"] button {
-    font-size: 0.82rem !important;
-    color: #64748b !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 0.5rem !important;
-    background: #ffffff !important;
-    padding: 0.375rem 0.875rem !important;
+/* ── Mic Button ────────────────────────────────────────────────────────────── */
+.mic-btn {
+    width: 2.75rem; height: 2.75rem;
+    border-radius: 9999px;
+    border: 2px solid #e2e8f0;
+    background: #ffffff;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s ease;
+    font-size: 1.15rem;
+    flex-shrink: 0;
 }
-/* Popover content panel — white to match app theme */
-[data-testid="stPopover"] [data-testid="stPopoverBody"],
-[data-testid="stPopoverBody"],
-div[data-baseweb="popover"] > div {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 0.75rem !important;
-    box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05) !important;
-    color: #1e293b !important;
+.mic-btn:hover {
+    border-color: #4f46e5;
+    background: #eef2ff;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
 }
-div[data-baseweb="popover"] label,
-div[data-baseweb="popover"] p,
-div[data-baseweb="popover"] span {
-    color: #1e293b !important;
+.mic-btn.recording {
+    border-color: #ef4444;
+    background: #fef2f2;
+    animation: mic-pulse 1.5s ease-in-out infinite;
 }
-/* Radio buttons inside popover */
-div[data-baseweb="popover"] [role="radiogroup"] label {
-    color: #334155 !important;
+@keyframes mic-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+    50%      { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
 }
-div[data-baseweb="popover"] [data-baseweb="radio"] div[data-testid="stMarkdownContainer"] {
-    color: #334155 !important;
-}
-/* Radio dot — use indigo instead of black */
-div[data-baseweb="popover"] [data-baseweb="radio"] div[role="radio"] > div {
-    background-color: #4f46e5 !important;
-    border-color: #4f46e5 !important;
-}
-div[data-baseweb="popover"] [data-baseweb="radio"] div[role="radio"][aria-checked="false"] > div {
-    background-color: transparent !important;
-    border-color: #cbd5e1 !important;
-}
-/* Audio input inside popover */
-div[data-baseweb="popover"] [data-testid="stAudioInput"] > div {
-    background: #f1f5f9 !important;
-    border-radius: 0.75rem !important;
-    border: 1px solid #e2e8f0 !important;
-}
-/* Audio record button */
-div[data-baseweb="popover"] [data-testid="stAudioInput"] button {
-    background: #4f46e5 !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 0.5rem !important;
-}
-div[data-baseweb="popover"] [data-testid="stAudioInput"] button:hover {
-    background: #4338ca !important;
-}
-/* Mic icon color */
-div[data-baseweb="popover"] [data-testid="stAudioInput"] svg {
-    color: #64748b !important;
-    fill: #64748b !important;
+.mic-status {
+    font-size: 0.75rem;
+    color: #ef4444;
+    font-weight: 500;
+    margin-top: 2px;
+    text-align: center;
 }
 
 /* ── Tabs (hide) ───────────────────────────────────────────────────────────── */
@@ -482,50 +449,161 @@ with col_left:
     st.markdown(f'<div class="transcript-panel">{transcript_html}</div>',
                 unsafe_allow_html=True)
 
-    # Input bar — visually connected to transcript card via CSS on stForm
-    with st.form("dialogue_form", clear_on_submit=True, border=False):
-        c_input, c_btn = st.columns([8, 1])
-        with c_input:
-            dialogue_input = st.text_input(
-                "msg", placeholder="Simulate next audio chunk...",
-                label_visibility="collapsed")
-        with c_btn:
-            submitted = st.form_submit_button("➤")
 
-        if submitted and dialogue_input.strip():
-            st.session_state.transcript.append(
-                (st.session_state.speaker_mode, dialogue_input.strip()))
-            st.session_state.speaker_mode = (
-                "Patient" if st.session_state.speaker_mode == "Doctor" else "Doctor")
+    # ── Voice Recording Button ────────────────────────────────────────────────
+    # Custom HTML/JS mic button: click to record, auto-stops after 5s silence.
+    # Audio is sent back to Streamlit via query params.
+    mic_js = """
+    <div id="mic-container" style="display:flex;align-items:center;gap:0.75rem;margin-top:0.5rem;">
+        <button id="micBtn" class="mic-btn" onclick="toggleRecording()" title="Click to record">
+            🎙️
+        </button>
+        <span id="micStatus" style="font-size:0.8rem;color:#64748b;">Click mic to start recording</span>
+    </div>
+    <script>
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let silenceTimer = null;
+    let analyserNode = null;
+    let audioCtx = null;
+    let animFrame = null;
+    let isRecording = false;
+    const SILENCE_THRESHOLD = 0.015;
+    const SILENCE_TIMEOUT = 5000;
 
-            full_ts = "\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
-            patient_ctx = data.format_patient_summary(active_patient)
+    function toggleRecording() {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            startRecording();
+        }
+    }
 
-            with st.spinner("Analyzing..."):
-                st.session_state.ai_analysis = analyze_consultation(patient_ctx, full_ts)
-            st.rerun()
+    async function startRecording() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioCtx = new AudioContext();
+            const source = audioCtx.createMediaStreamSource(stream);
+            analyserNode = audioCtx.createAnalyser();
+            analyserNode.fftSize = 2048;
+            source.connect(analyserNode);
 
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            audioChunks = [];
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+            mediaRecorder.onstop = () => {
+                stream.getTracks().forEach(t => t.stop());
+                if (audioCtx) { audioCtx.close(); audioCtx = null; }
+                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                sendAudio(blob);
+            };
 
-    # Voice input popover
-    with st.popover("🎙️ Voice Input"):
-        speaker_select = st.radio(
-            "Speaker", ["Doctor", "Patient"], horizontal=True, key="audio_speaker")
-        audio_value = st.audio_input("Record dialogue", label_visibility="collapsed")
-        if audio_value:
-            h = hash(audio_value.getvalue())
-            if st.session_state.get("last_audio_hash") != h:
-                st.session_state.last_audio_hash = h
-                with st.spinner("Transcribing..."):
-                    txt = transcribe_audio(audio_value.getvalue())
-                if txt and not txt.startswith("[Transcription"):
-                    st.session_state.transcript.append((speaker_select, txt))
-                    ts = "\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
-                    ps = data.format_patient_summary(active_patient)
-                    with st.spinner("Analyzing..."):
-                        st.session_state.ai_analysis = analyze_consultation(ps, ts)
-                    st.rerun()
-                else:
-                    st.error(txt)
+            mediaRecorder.start(250);
+            isRecording = true;
+            document.getElementById('micBtn').classList.add('recording');
+            document.getElementById('micStatus').textContent = '🔴 Recording… (auto-stops after 5s silence)';
+            document.getElementById('micStatus').style.color = '#ef4444';
+            monitorSilence();
+        } catch (err) {
+            document.getElementById('micStatus').textContent = '⚠️ Mic access denied';
+            document.getElementById('micStatus').style.color = '#f59e0b';
+        }
+    }
+
+    function stopRecording() {
+        isRecording = false;
+        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+        if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); }
+        document.getElementById('micBtn').classList.remove('recording');
+        document.getElementById('micStatus').textContent = '⏳ Processing audio…';
+        document.getElementById('micStatus').style.color = '#4f46e5';
+    }
+
+    function monitorSilence() {
+        const bufLen = analyserNode.frequencyBinCount;
+        const data = new Float32Array(bufLen);
+        let lastSoundTime = Date.now();
+
+        function check() {
+            if (!isRecording) return;
+            analyserNode.getFloatTimeDomainData(data);
+            let rms = 0;
+            for (let i = 0; i < bufLen; i++) rms += data[i] * data[i];
+            rms = Math.sqrt(rms / bufLen);
+
+            if (rms > SILENCE_THRESHOLD) {
+                lastSoundTime = Date.now();
+            } else if (Date.now() - lastSoundTime > SILENCE_TIMEOUT) {
+                stopRecording();
+                return;
+            }
+            animFrame = requestAnimationFrame(check);
+        }
+        check();
+    }
+
+    function sendAudio(blob) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const b64 = reader.result.split(',')[1];
+            // Send to Streamlit via query param update
+            const url = new URL(window.parent.location);
+            url.searchParams.set('audio_b64', b64);
+            url.searchParams.set('audio_ts', Date.now().toString());
+            window.parent.history.replaceState({}, '', url);
+            // Trigger Streamlit rerun
+            window.parent.document.querySelectorAll('iframe').forEach(f => {
+                try { f.contentWindow.postMessage({type:'streamlit:setComponentValue', value: b64}, '*'); } catch(e){}
+            });
+            // Force rerun via a small hack — click a hidden button if it exists
+            document.getElementById('micStatus').textContent = '✅ Audio captured — reloading…';
+            document.getElementById('micStatus').style.color = '#059669';
+            // Use Streamlit's setComponentValue
+            window.parent.postMessage({isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: b64}, '*');
+            // Fallback: set in sessionStorage and trigger via fragment
+            window.parent.sessionStorage.setItem('aura_audio_b64', b64);
+            window.parent.location.hash = 'audio_ready_' + Date.now();
+        };
+        reader.readAsDataURL(blob);
+    }
+    </script>
+    """
+    st_html(mic_js, height=55)
+
+    # Check for audio data from the JS component via query params
+    query_params = st.query_params
+    audio_b64 = query_params.get("audio_b64", None)
+    audio_ts = query_params.get("audio_ts", None)
+
+    if audio_b64 and audio_ts:
+        # Avoid re-processing the same audio
+        if st.session_state.get("last_audio_ts") != audio_ts:
+            st.session_state.last_audio_ts = audio_ts
+            # Clear query params
+            st.query_params.clear()
+
+            # Decode and transcribe
+            audio_bytes = base64.b64decode(audio_b64)
+            with st.spinner("🎙️ Transcribing audio..."):
+                txt = transcribe_audio(audio_bytes)
+
+            if txt and not txt.startswith("[Transcription"):
+                st.session_state.transcript.append(
+                    (st.session_state.speaker_mode, txt))
+                st.session_state.speaker_mode = (
+                    "Patient" if st.session_state.speaker_mode == "Doctor" else "Doctor")
+
+                ts = "\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
+                ps = data.format_patient_summary(active_patient)
+                with st.spinner("Analyzing..."):
+                    st.session_state.ai_analysis = analyze_consultation(ps, ts)
+                st.rerun()
+            else:
+                st.error(txt or "No speech detected.")
+        else:
+            # Already processed, just clear params
+            st.query_params.clear()
 
 
 # ─── RIGHT: DDx & Clinical Gaps (col-span-2) ────────────────────────────────
