@@ -11,6 +11,7 @@ import websocket
 import json
 import threading
 import base64
+import ssl
 
 # ---- WebRTC Audio Streaming Processor (Gradium WebSocket) ----
 class AudioStreamingProcessor:
@@ -99,7 +100,11 @@ class AudioStreamingProcessor:
                         on_close=on_close
                     )
                     print("[Gradium] Starting WebSocket run_forever loop...")
-                    self.ws.run_forever(ping_interval=10, ping_timeout=5)
+                    self.ws.run_forever(
+                        ping_interval=10, 
+                        ping_timeout=5,
+                        sslopt={"cert_reqs": ssl.CERT_NONE}
+                    )
                     print("[Gradium] WebSocket run_forever exited.")
                     break
                 except Exception as e:
