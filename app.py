@@ -1,26 +1,16 @@
 import os
-import requests
 import streamlit as st
 from dotenv import load_dotenv
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
 import data
 from assistant import analyze_consultation
+from audio_processing import AudioStreamingProcessor, transcribe_audio_chunk, get_speaker_role
+import queue
 
 # Load environment variables from .env
 load_dotenv()
 
-def transcribe_audio(audio_bytes):
-    url = "https://api.elevenlabs.io/v1/speech-to-text"
-    headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY", "")}
-    files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
-    data = {"model_id": "scribe_v1"}
-    try:
-        response = requests.post(url, headers=headers, files=files, data=data)
-        if response.status_code == 200:
-            return response.json().get("text", "")
-        else:
-            return f"[Transcription Failed: {response.text}]"
-    except Exception as e:
-        return f"[Transcription Error: {e}]"
+# Removed old transcribe_audio_diarized as it is now in audio_processing.py
 
 # Set page config for wide layout and custom title
 st.set_page_config(
@@ -238,51 +228,75 @@ with col1:
 
     st.markdown("<br>", unsafe_allow_html=True)
     
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     # Input Area - Text & Audio
     input_container = st.container()
     with input_container:
-        speaker_col, input_col = st.columns([1, 4])
-        with speaker_col:
-            speaker_select = st.radio("Speaker", ["Doctor", "Patient"], horizontal=False)
-            
-        with input_col:
-            text_tab, audio_tab = st.tabs(["⌨️ Type Note", "🎙️ Record Voice"])
-            
-            with text_tab:
-                with st.form("dialogue_form", clear_on_submit=True, border=False):
-                    dialogue_input = st.text_input("Enter speech text...", placeholder="e.g. How long have you had this cough?", label_visibility="collapsed")
-                    submitted = st.form_submit_button("Submit & Analyze")
+        text_tab, audio_tab = st.tabs(["⌨️ Type Note", "🎙️ Record Voice"])
+        
+        with text_tab:
+            with st.form("dialogue_form", clear_on_submit=True, border=False):
+                dialogue_input = st.text_input("Enter speech text...", placeholder="e.g. Doctor: How long have you had this cough?", label_visibility="collapsed")
+                submitted = st.form_submit_button("Submit & Analyze")
+                
+                if submitted and dialogue_input.strip():
+                    # Parse speaker from text if provided (e.g. "Doctor: Hello")
+                    input_text = dialogue_input.strip()
+                    speaker = "Doctor"
+                    if ":" in input_text:
+                        parts = input_text.split(":", 1)
+                        if parts[0].strip().lower() in ["doctor", "patient"]:
+                            speaker = parts[0].strip().capitalize()
+                            input_text = parts[1].strip()
+                            
+                    st.session_state.transcript.append((speaker, input_text))
                     
-                    if submitted and dialogue_input.strip():
-                        st.session_state.transcript.append((speaker_select, dialogue_input.strip()))
-                        
-                        full_transcript_str = "\\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
-                        patient_context_str = data.format_patient_summary(active_patient)
-                        
-                        with st.spinner("Qwen3 is analyzing..."):
-                            st.session_state.ai_analysis = analyze_consultation(patient_context_str, full_transcript_str)
-                        st.rerun()
+                    full_transcript_str = "\\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
+                    patient_context_str = data.format_patient_summary(active_patient)
+                    
+                    with st.spinner("Qwen3 is analyzing..."):
+                        st.session_state.ai_analysis = analyze_consultation(patient_context_str, full_transcript_str)
+                    st.rerun()
                         
             with audio_tab:
-                audio_value = st.audio_input("Record dialogue", label_visibility="collapsed")
-                if audio_value:
-                    current_audio_hash = hash(audio_value.getvalue())
-                    if st.session_state.get("last_audio_hash") != current_audio_hash:
-                        st.session_state.last_audio_hash = current_audio_hash
-                        
-                        with st.spinner("ElevenLabs Transcribing..."):
-                            transcribed_text = transcribe_audio(audio_value.getvalue())
-                        
-                        if transcribed_text and not transcribed_text.startswith("[Transcription"):
-                            st.session_state.transcript.append((speaker_select, transcribed_text))
-                            
-                            full_transcript_str = "\\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
-                            patient_context_str = data.format_patient_summary(active_patient)
-                            with st.spinner("Qwen3 is analyzing..."):
-                                st.session_state.ai_analysis = analyze_consultation(patient_context_str, full_transcript_str)
-                            st.rerun()
-                        else:
-                            st.error(transcribed_text)
+                st.caption("Live streaming enabled. Speak and your words will appear automatically.")
+                webrtc_ctx = webrtc_streamer(
+                    key="speech_to_text",
+                    mode=WebRtcMode.SENDONLY,
+                    audio_processor_factory=AudioStreamingProcessor,
+                    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+                )
+                
+                if webrtc_ctx.state.playing:
+                    status_placeholder = st.empty()
+                    status_placeholder.info("Listening... (processing every 3.5 seconds)")
+                    
+                    # Prevent strict blocking, allow streamlit to breathe
+                    import time
+                    while webrtc_ctx.state.playing:
+                        if webrtc_ctx.audio_processor:
+                            try:
+                                audio_chunk = webrtc_ctx.audio_processor.audio_queue.get(timeout=0.5)
+                                with st.spinner("Processing chunk..."):
+                                    # 1. Identify speaker via Pyannote embedding
+                                    role = get_speaker_role(audio_chunk["waveform"], audio_chunk["sample_rate"])
+                                    
+                                    # 2. Transcribe plain text via ElevenLabs STT
+                                    txt = transcribe_audio_chunk(audio_chunk["wav_bytes"])
+                                    
+                                if txt and txt.strip():
+                                    st.session_state.transcript.append((role, txt.strip()))
+                                    
+                                    # Re-analyze with new context
+                                    full_transcript_str = "\\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
+                                    patient_context_str = data.format_patient_summary(active_patient)
+                                    st.session_state.ai_analysis = analyze_consultation(patient_context_str, full_transcript_str)
+                                    st.rerun()
+                                                
+                            except queue.Empty:
+                                pass
+                        time.sleep(0.1)
 
 # Right Column: AI Medical Assistant
 with col2:
