@@ -19,10 +19,10 @@ from __future__ import annotations
 import argparse
 from typing import List, Optional
 
-from medical_dataset import load_datasets
-from scorer       import DiagnosisScorer, CandidateDiagnosis, _normalise
-from reporter     import render_console, render_markdown
-from updater      import SequentialUpdater
+from agents.medical_dataset import load_datasets
+from agents.scorer       import DiagnosisScorer, CandidateDiagnosis, _normalise
+from agents.reporter     import render_console, render_markdown
+from agents.updater      import SequentialUpdater
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ class MedicalDiagnosisAgent:
         self.df, self.dataset_source = load_datasets()
 
         # Build semantic index over all symptom + RF phrases
-        from semantic_index import SemanticIndex
+        from agents.semantic_index import SemanticIndex
         all_phrases: List[str] = []
         for _, row in self.df.iterrows():
             all_phrases.extend(row["symptoms"])

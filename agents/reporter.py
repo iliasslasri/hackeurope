@@ -17,7 +17,7 @@ The ⚠️  flag marks the clinically dangerous quadrant:
 
 from __future__ import annotations
 from typing import List
-from scorer import CandidateDiagnosis
+from agents.scorer import CandidateDiagnosis
 
 PROB_ICONS = {
     "Very High": "🔴",

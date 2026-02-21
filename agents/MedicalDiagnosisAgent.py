@@ -1,10 +1,10 @@
 from __future__ import annotations
 from typing import List, Optional
 
-from medical_dataset import load_dataset
-from scorer          import DiagnosisScorer, CandidateDiagnosis, _normalise
-from updater         import SequentialUpdater
-from question_strategy import Question
+from agents.medical_dataset import load_dataset
+from agents.scorer          import DiagnosisScorer, CandidateDiagnosis, _normalise
+from agents.updater         import SequentialUpdater
+from agents.question_strategy import Question
 
 class MedicalDiagnosisAgent:
 
@@ -12,7 +12,7 @@ class MedicalDiagnosisAgent:
         self.df, self.dataset_source = load_dataset()
         self.candidates: Optional[List[CandidateDiagnosis]] = None
 
-        from semantic_index import SemanticIndex
+        from agents.semantic_index import SemanticIndex
         all_phrases: List[str] = []
         for _, row in self.df.iterrows():
             all_phrases.extend(row["symptoms"])

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from semantic_index import SemanticIndex
+    from agents.semantic_index import SemanticIndex
 
 RNG        = np.random.default_rng(42)
 MC_SAMPLES = 5_000
