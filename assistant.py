@@ -9,10 +9,10 @@ load_dotenv()
 # Configure the OpenAI API client for Crusoe
 client = OpenAI(
     base_url='https://hackeurope.crusoecloud.com/v1/',
-    api_key=os.getenv("CRUSOE_API_KEY", "dummy_key_to_prevent_crash"),
+    api_key=os.getenv("CRUSOE_API_KEY"),
 )
 
-MODEL_NAME = 'Qwen/Qwen3-235B-A22B-Instruct-2507'
+MODEL_NAME = 'NVFP4/Qwen3-235B-A22B-Instruct-2507-FP4'
 
 def analyze_consultation(patient_summary, transcript):
     """
