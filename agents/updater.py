@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Literal, Union
 
 from scorer import (CandidateDiagnosis, _normalise, _tokenise,
-                    RNG, MC_SAMPLES, W_SYMPTOMS, W_RISK, W_PRIOR)
+                    RNG, MC_SAMPLES, W_SYMPTOMS, W_RISK, W_PRIOR,
+                    beta_variance_confidence)
 from answer_parser import FreeTextAnswerParser, ParsedAnswer
 from question_strategy import QuestionStrategy, Question
 
@@ -101,12 +102,22 @@ class SequentialUpdater:
             rf_list  = [_normalise(r) for r in prof.get("risk_factors", [])]
             s_match  = c.symptom_match_exact + 0.5 * c.symptom_match_partial
             s_miss   = max(c.symptom_total - s_match, 0)
+            # Inizializzazione con SOLE osservazioni attive dall'anamnesi iniziale.
+            # I sintomi riportati dal paziente all'inizio (symptoms_text) sono
+            # osservazioni attive -> yes. I sintomi nel profilo non menzionati
+            # sono miss PASSIVI -> non contribuiscono al Beta, solo alla probabilità.
+            # Questo garantisce che C=0 per malattie mai esplorate via Q&A.
+            s_active_match = s_match          # sintomi riportati = yes attivi
+            s_active_miss  = 0.0              # non sappiamo ancora dei miss
+            rf_active_match = float(c.risk_factor_hits)
+            rf_active_miss  = 0.0
+
             self._states[c.disease] = DiseaseState(
                 disease    = c.disease,
-                sym_alpha  = s_match + 1.0,
-                sym_beta   = s_miss  + 1.0,
-                rf_alpha   = c.risk_factor_hits + 1.0,
-                rf_beta    = max(c.risk_factor_total - c.risk_factor_hits, 0) + 1.0,
+                sym_alpha  = s_active_match + 1.0,
+                sym_beta   = s_active_miss  + 1.0,
+                rf_alpha   = rf_active_match + 1.0,
+                rf_beta    = rf_active_miss  + 1.0,
                 prior      = c.prior,
                 evidence_n = c.evidence_tokens,
                 sym_profile = sym_list,
@@ -259,7 +270,23 @@ class SequentialUpdater:
 
     @staticmethod
     def _confidence(st: DiseaseState) -> float:
-        return st.evidence_n / (st.evidence_n + K_CONF)
+        """
+        Confidenza basata sulla varianza analitica del posterior Beta,
+        usando SOLO le osservazioni attive accumulate via Q&A.
+
+        Lo stato DiseaseState traccia separatamente le osservazioni attive:
+          - sym_alpha/sym_beta partono da (1,1) e crescono solo con risposte
+            esplicite del paziente (yes/no/mild/unsure a domande poste)
+          - I miss passivi iniziali dello scorer NON entrano qui
+
+        Quindi C=0 all'inizio e cresce solo con la Q&A.
+        """
+        return beta_variance_confidence(
+            sym_alpha = st.sym_alpha,
+            sym_beta  = st.sym_beta,
+            rf_alpha  = st.rf_alpha,
+            rf_beta   = st.rf_beta,
+        )
 
     @property
     def turn(self) -> int:
