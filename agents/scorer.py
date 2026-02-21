@@ -182,6 +182,88 @@ class DiagnosisScorer:
 
     @staticmethod
     def _compute_conf(cand):
+        """
+        Confidenza basata SOLO su osservazioni attive.
+
+        I miss passivi (sintomi nel profilo mai chiesti) NON sono evidenza:
+        non sappiamo se il paziente non li ha o semplicemente non li ha menzionati.
+
+        Usiamo solo:
+          - symptom_match_exact/partial  (riportati dal paziente -> yes attivo)
+          - symptom_observed             (quanti ne abbiamo effettivamente valutati)
+
+        I miss attivi = symptom_observed - match_effettivi.
+        """
         n = cand.symptom_observed + cand.risk_factor_observed
         cand.evidence_tokens = n
-        cand.confidence = n / (n + 6.0)
+
+        # Osservazioni ATTIVE: solo i sintomi che abbiamo effettivamente valutato
+        s_active_match = cand.symptom_match_exact + 0.5 * cand.symptom_match_partial
+        s_active_miss  = max(cand.symptom_observed - s_active_match, 0)
+        rf_active_match = cand.risk_factor_hits
+        rf_active_miss  = max(cand.risk_factor_observed - rf_active_match, 0)
+
+        cand.confidence = beta_variance_confidence(
+            sym_alpha = s_active_match + 1.0,
+            sym_beta  = s_active_miss  + 1.0,
+            rf_alpha  = rf_active_match + 1.0,
+            rf_beta   = rf_active_miss  + 1.0,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Beta-variance confidence (replaces n/(n+k) heuristic)
+# ---------------------------------------------------------------------------
+
+def beta_variance(alpha: float, beta: float) -> float:
+    """
+    Varianza analitica esatta del posterior Beta(alpha, beta):
+
+        Var[theta] = (alpha * beta) / ((alpha + beta)^2 * (alpha + beta + 1))
+
+    Decresce monotonicamente all'aumentare dell'evidenza:
+      - Beta(1,1)   -> Var = 1/12  ≈ 0.0833  (prior uniforme, massima incertezza)
+      - Beta(5,5)   -> Var = 1/44  ≈ 0.0227
+      - Beta(10,10) -> Var = 1/84  ≈ 0.0119
+      - Beta(50,2)  -> Var ≈ 0.0016 (molto evidenza, distribuzione stretta)
+    """
+    s = alpha + beta
+    return (alpha * beta) / (s * s * (s + 1.0))
+
+
+def beta_variance_confidence(sym_alpha: float, sym_beta: float,
+                              rf_alpha: float,  rf_beta: float) -> float:
+    """
+    Confidenza basata sulla varianza analitica del posterior Beta.
+
+    La likelihood combinata e':
+        lambda_d = w_s * theta_sym + w_r * theta_rf + w_p * pi_d
+
+    Poiche' theta_sym e theta_rf sono indipendenti, la varianza di lambda_d
+    (ignorando il termine prior che ha varianza fissa piccola) e':
+
+        Var[lambda_d] ≈ w_s^2 * Var[theta_sym] + w_r^2 * Var[theta_rf]
+
+    Normalizziamo rispetto al massimo teorico (entrambi Beta(1,1)):
+
+        Var_max = w_s^2 * 1/12 + w_r^2 * 1/12
+                = (w_s^2 + w_r^2) / 12
+                = (0.65^2 + 0.20^2) / 12
+                = 0.4625 / 12
+                ≈ 0.03854
+
+    Confidenza:
+        C_d = 1 - Var[lambda_d] / Var_max  ∈ [0, 1]
+
+    Con Beta(1,1) -> C = 0  (nessuna evidenza)
+    All'aumentare di alpha e beta -> Var -> 0 -> C -> 1
+    """
+    var_sym = beta_variance(sym_alpha, sym_beta)
+    var_rf  = beta_variance(rf_alpha,  rf_beta)
+
+    var_combined = W_SYMPTOMS**2 * var_sym + W_RISK**2 * var_rf
+
+    # Massimo teorico: entrambi Beta(1,1) -> Var = 1/12
+    var_max = (W_SYMPTOMS**2 + W_RISK**2) / 12.0   # ≈ 0.03854
+
+    return float(1.0 - var_combined / var_max)

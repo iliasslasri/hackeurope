@@ -1,12 +1,17 @@
 import os
 import base64
 import requests
+import queue
+import time
 import streamlit as st
 from streamlit.components.v1 import html as st_html
 from dotenv import load_dotenv
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
+
 import data
 from backend.schemas import AuraUIPayload, DDxEntry, DiseaseQuestions
 from backend.agents import AuraPipeline
+from backend.audio_processing import AudioStreamingProcessor
 
 load_dotenv()
 
@@ -38,10 +43,13 @@ if "current_patient_id" not in st.session_state:
     st.session_state.current_patient_id = "P001"
 if "speaker_mode" not in st.session_state:
     st.session_state.speaker_mode = "Doctor"
-if "recording_active" not in st.session_state:
-    st.session_state.recording_active = False
-if "audio_b64" not in st.session_state:
-    st.session_state.audio_b64 = None
+
+if "was_playing" not in st.session_state:
+    st.session_state.was_playing = False
+if "last_speech_time" not in st.session_state:
+    st.session_state.last_speech_time = time.time()
+if "transcript_changed_since_llm" not in st.session_state:
+    st.session_state.transcript_changed_since_llm = False
 
 active_patient = data.get_patient_by_id(st.session_state.current_patient_id)
 
@@ -420,190 +428,94 @@ with col_left:
     st.markdown('<div class="section-title">Consultation Transcript</div>',
                 unsafe_allow_html=True)
 
-    # Build transcript HTML
-    transcript_html = ""
-    if not st.session_state.transcript:
-        transcript_html = """
-        <div class="empty-state">
-            <div class="icon">💬</div>
-            <div>No dialogue recorded yet.<br>Start the consultation below.</div>
-        </div>"""
-    else:
-        for speaker, text in st.session_state.transcript:
-            if speaker == "Doctor":
-                # Doctor = user role → flex-row-reverse, indigo avatar, indigo bubble
-                transcript_html += f"""
-                <div class="msg-row doctor">
-                    <div class="avatar-icon doctor">🩺</div>
-                    <div class="msg-bubble doctor">{text}</div>
-                </div>"""
-            else:
-                # Patient = assistant role → flex-row, emerald avatar, slate bubble
-                transcript_html += f"""
-                <div class="msg-row patient">
-                    <div class="avatar-icon patient">👤</div>
-                    <div class="msg-bubble patient">{text}</div>
-                </div>"""
-
-    st.markdown(f'<div class="transcript-panel">{transcript_html}</div>',
-                unsafe_allow_html=True)
-
-
-    # ── Voice Recording Button ────────────────────────────────────────────────
-    # Custom HTML/JS mic button: click to record, auto-stops after 5s silence.
-    # Audio is sent back to Streamlit via query params.
-    mic_js = """
-    <div id="mic-container" style="display:flex;align-items:center;gap:0.75rem;margin-top:0.5rem;">
-        <button id="micBtn" class="mic-btn" onclick="toggleRecording()" title="Click to record">
-            🎙️
-        </button>
-        <span id="micStatus" style="font-size:0.8rem;color:#64748b;">Click mic to start recording</span>
-    </div>
-    <script>
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let silenceTimer = null;
-    let analyserNode = null;
-    let audioCtx = null;
-    let animFrame = null;
-    let isRecording = false;
-    const SILENCE_THRESHOLD = 0.015;
-    const SILENCE_TIMEOUT = 5000;
-
-    function toggleRecording() {
-        if (isRecording) {
-            stopRecording();
-        } else {
-            startRecording();
-        }
-    }
-
-    async function startRecording() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioCtx = new AudioContext();
-            const source = audioCtx.createMediaStreamSource(stream);
-            analyserNode = audioCtx.createAnalyser();
-            analyserNode.fftSize = 2048;
-            source.connect(analyserNode);
-
-            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            audioChunks = [];
-            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-            mediaRecorder.onstop = () => {
-                stream.getTracks().forEach(t => t.stop());
-                if (audioCtx) { audioCtx.close(); audioCtx = null; }
-                const blob = new Blob(audioChunks, { type: 'audio/webm' });
-                sendAudio(blob);
-            };
-
-            mediaRecorder.start(250);
-            isRecording = true;
-            document.getElementById('micBtn').classList.add('recording');
-            document.getElementById('micStatus').textContent = '🔴 Recording… (auto-stops after 5s silence)';
-            document.getElementById('micStatus').style.color = '#ef4444';
-            monitorSilence();
-        } catch (err) {
-            document.getElementById('micStatus').textContent = '⚠️ Mic access denied';
-            document.getElementById('micStatus').style.color = '#f59e0b';
-        }
-    }
-
-    function stopRecording() {
-        isRecording = false;
-        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
-        if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); }
-        document.getElementById('micBtn').classList.remove('recording');
-        document.getElementById('micStatus').textContent = '⏳ Processing audio…';
-        document.getElementById('micStatus').style.color = '#4f46e5';
-    }
-
-    function monitorSilence() {
-        const bufLen = analyserNode.frequencyBinCount;
-        const data = new Float32Array(bufLen);
-        let lastSoundTime = Date.now();
-
-        function check() {
-            if (!isRecording) return;
-            analyserNode.getFloatTimeDomainData(data);
-            let rms = 0;
-            for (let i = 0; i < bufLen; i++) rms += data[i] * data[i];
-            rms = Math.sqrt(rms / bufLen);
-
-            if (rms > SILENCE_THRESHOLD) {
-                lastSoundTime = Date.now();
-            } else if (Date.now() - lastSoundTime > SILENCE_TIMEOUT) {
-                stopRecording();
-                return;
-            }
-            animFrame = requestAnimationFrame(check);
-        }
-        check();
-    }
-
-    function sendAudio(blob) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const b64 = reader.result.split(',')[1];
-            // Send to Streamlit via query param update
-            const url = new URL(window.parent.location);
-            url.searchParams.set('audio_b64', b64);
-            url.searchParams.set('audio_ts', Date.now().toString());
-            window.parent.history.replaceState({}, '', url);
-            // Trigger Streamlit rerun
-            window.parent.document.querySelectorAll('iframe').forEach(f => {
-                try { f.contentWindow.postMessage({type:'streamlit:setComponentValue', value: b64}, '*'); } catch(e){}
-            });
-            // Force rerun via a small hack — click a hidden button if it exists
-            document.getElementById('micStatus').textContent = '✅ Audio captured — reloading…';
-            document.getElementById('micStatus').style.color = '#059669';
-            // Use Streamlit's setComponentValue
-            window.parent.postMessage({isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: b64}, '*');
-            // Fallback: set in sessionStorage and trigger via fragment
-            window.parent.sessionStorage.setItem('aura_audio_b64', b64);
-            window.parent.location.hash = 'audio_ready_' + Date.now();
-        };
-        reader.readAsDataURL(blob);
-    }
-    </script>
-    """
-    st_html(mic_js, height=55)
-
-    # Check for audio data from the JS component via query params
-    query_params = st.query_params
-    audio_b64 = query_params.get("audio_b64", None)
-    audio_ts = query_params.get("audio_ts", None)
-
-    if audio_b64 and audio_ts:
-        # Avoid re-processing the same audio
-        if st.session_state.get("last_audio_ts") != audio_ts:
-            st.session_state.last_audio_ts = audio_ts
-            # Clear query params
-            st.query_params.clear()
-
-            # Decode and transcribe
-            audio_bytes = base64.b64decode(audio_b64)
-            with st.spinner("🎙️ Transcribing audio..."):
-                txt = transcribe_audio(audio_bytes)
-
-            if txt and not txt.startswith("[Transcription"):
-                st.session_state.transcript.append(
-                    (st.session_state.speaker_mode, txt))
-                st.session_state.speaker_mode = (
-                    "Patient" if st.session_state.speaker_mode == "Doctor" else "Doctor")
-
-                full_transcript = "\n".join(
-                    [f"{s}: {t}" for s, t in st.session_state.transcript])
-                with st.spinner("Analyzing..."):
-                    st.session_state.ai_analysis = st.session_state.pipeline.run(
-                        full_transcript)
-                st.rerun()
-            else:
-                st.error(txt or "No speech detected.")
+    transcript_placeholder = st.empty()
+    
+    def render_transcript():
+        transcript_html = ""
+        if not st.session_state.transcript:
+            transcript_html = """
+            <div class="empty-state">
+                <div class="icon">💬</div>
+                <div>No dialogue recorded yet.<br>Start the consultation below.</div>
+            </div>"""
         else:
-            # Already processed, just clear params
-            st.query_params.clear()
+            for speaker, text in st.session_state.transcript:
+                if speaker == "Doctor":
+                    # Doctor = user role → flex-row-reverse, indigo avatar, indigo bubble
+                    transcript_html += f"""
+                    <div class="msg-row doctor">
+                        <div class="avatar-icon doctor">🩺</div>
+                        <div class="msg-bubble doctor">{text}</div>
+                    </div>"""
+                else:
+                    # Patient = assistant role → flex-row, emerald avatar, slate bubble
+                    transcript_html += f"""
+                    <div class="msg-row patient">
+                        <div class="avatar-icon patient">👤</div>
+                        <div class="msg-bubble patient">{text}</div>
+                    </div>"""
+        transcript_placeholder.markdown(f'<div class="transcript-panel" id="transcript-auto-scroll">{transcript_html}</div>', unsafe_allow_html=True)
+
+    render_transcript()
+
+    # ── Voice Recording Button (WebRTC) ───────────────────────────────────────
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.caption("🔴 Live Audio Stream (Transcribes with Gradium - analyzes after 5s silence)")
+    webrtc_ctx = webrtc_streamer(
+        key="speech_to_text",
+        mode=WebRtcMode.SENDONLY,
+        audio_processor_factory=AudioStreamingProcessor,
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        media_stream_constraints={"video": False, "audio": True}
+    )
+    
+    if webrtc_ctx.state.playing:
+        st.session_state.was_playing = True
+        status_placeholder = st.empty()
+        status_placeholder.info("Listening... (streaming to Gradium API)")
+        
+        while webrtc_ctx.state.playing:
+            if webrtc_ctx.audio_processor:
+                collected_text = False
+                try:
+                    # Drain the queue to get real-time words
+                    while True:
+                        text_item = webrtc_ctx.audio_processor.text_queue.get_nowait()
+                        if text_item and text_item.strip():
+                            # If we have no transcript, start a new tuple
+                            if not st.session_state.transcript:
+                                st.session_state.transcript.append(("Doctor", text_item.strip() + " "))
+                            else:
+                                # Append to the last tuple to avoid spawning 1000s of chat bubbles
+                                speaker, existing_text = st.session_state.transcript[-1]
+                                st.session_state.transcript[-1] = (speaker, existing_text + text_item.strip() + " ")
+                                
+                            collected_text = True
+                except queue.Empty:
+                    pass
+                    
+                if collected_text:
+                    st.session_state.last_speech_time = time.time()
+                    st.session_state.transcript_changed_since_llm = True
+                    # Instantly update the UI placeholder without blocking the thread
+                    render_transcript()
+                    
+                # If 5 seconds of silence happened, auto-analyze
+                if st.session_state.transcript_changed_since_llm and (time.time() - st.session_state.last_speech_time > 5.0):
+                    st.session_state.transcript_changed_since_llm = False
+                    status_placeholder.info("Silence detected. AI is analyzing consultation...")
+                    
+                    # Construct the full_transcript exactly like before
+                    full_transcript = "\\n".join(
+                        [f"{s}: {t}" for s, t in st.session_state.transcript]
+                    )
+                    
+                    st.session_state.ai_analysis = st.session_state.pipeline.run(full_transcript)
+                    st.rerun()
+                    
+            time.sleep(0.1)
+    else:
+        st.session_state.was_playing = False
 
 
 # ─── RIGHT: DDx & Clinical Gaps (col-span-2) ────────────────────────────────

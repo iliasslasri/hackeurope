@@ -27,7 +27,6 @@ from backend.medicalDiagnosisAgent import MedicalDiagnosisAgent
 
 logger = logging.getLogger(__name__)
 
-
 class AuraPipeline:
     """
     Stateful orchestrator — holds the patient history across transcript chunks.
