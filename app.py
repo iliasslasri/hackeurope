@@ -1,14 +1,15 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
+
+# Load environment variables from .env EARLY so HF_TOKEN is available for imports
+load_dotenv()
+
 from streamlit_webrtc import webrtc_streamer, WebRtcMode
 import data
 from assistant import analyze_consultation
-from audio_processing import AudioStreamingProcessor, transcribe_audio_chunk, get_speaker_role
+from backend.audio_processing import AudioStreamingProcessor
 import queue
-
-# Load environment variables from .env
-load_dotenv()
 
 # Removed old transcribe_audio_diarized as it is now in audio_processing.py
 
@@ -23,6 +24,9 @@ st.set_page_config(
 # Initialize Session State Variables
 if "transcript" not in st.session_state:
     st.session_state.transcript = []
+
+if "was_playing" not in st.session_state:
+    st.session_state.was_playing = False
 
 if "ai_analysis" not in st.session_state:
     st.session_state.ai_analysis = {
@@ -218,15 +222,15 @@ with col1:
     # Container for Chat History using native st.chat_message
     chat_container = st.container(height=450, border=True)
     with chat_container:
+        transcript_placeholder = st.empty()
         if not st.session_state.transcript:
-            st.info("No dialogue recorded yet. Start the consultation below.")
+            transcript_placeholder.info("No dialogue recorded yet. Start the consultation below.")
         else:
-            for speaker, text in st.session_state.transcript:
-                avatar = "👨‍⚕️" if speaker == "Doctor" else "🤕"
-                with st.chat_message(speaker.lower(), avatar=avatar):
-                    st.write(f"**{speaker}:** {text}")
-
-    st.markdown("<br>", unsafe_allow_html=True)
+            # Join all transcript chunks with spaces for a continuous flow
+            transcript_placeholder.markdown(
+                f"<div class='transcript-box'>{''.join(st.session_state.transcript)}</div>", 
+                unsafe_allow_html=True
+            )
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -250,9 +254,10 @@ with col1:
                             speaker = parts[0].strip().capitalize()
                             input_text = parts[1].strip()
                             
-                    st.session_state.transcript.append((speaker, input_text))
+                    st.session_state.transcript.append(input_text.strip())
                     
-                    full_transcript_str = "\\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
+                    # Update analysis instantly for manual input
+                    full_transcript_str = " ".join(st.session_state.transcript)
                     patient_context_str = data.format_patient_summary(active_patient)
                     
                     with st.spinner("Qwen3 is analyzing..."):
@@ -269,34 +274,51 @@ with col1:
                 )
                 
                 if webrtc_ctx.state.playing:
+                    st.session_state.was_playing = True
                     status_placeholder = st.empty()
-                    status_placeholder.info("Listening... (processing every 3.5 seconds)")
+                    status_placeholder.info("Listening... (streaming to Gradium AI)")
                     
                     # Prevent strict blocking, allow streamlit to breathe
                     import time
+                    if "last_speech_time" not in st.session_state:
+                        st.session_state.last_speech_time = time.time()
+                    if "transcript_changed_since_llm" not in st.session_state:
+                        st.session_state.transcript_changed_since_llm = False
+                        
                     while webrtc_ctx.state.playing:
                         if webrtc_ctx.audio_processor:
+                            collected_text = False
                             try:
-                                audio_chunk = webrtc_ctx.audio_processor.audio_queue.get(timeout=0.5)
-                                with st.spinner("Processing chunk..."):
-                                    # 1. Identify speaker via Pyannote embedding
-                                    role = get_speaker_role(audio_chunk["waveform"], audio_chunk["sample_rate"])
-                                    
-                                    # 2. Transcribe plain text via ElevenLabs STT
-                                    txt = transcribe_audio_chunk(audio_chunk["wav_bytes"])
-                                    
-                                if txt and txt.strip():
-                                    st.session_state.transcript.append((role, txt.strip()))
-                                    
-                                    # Re-analyze with new context
-                                    full_transcript_str = "\\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
-                                    patient_context_str = data.format_patient_summary(active_patient)
-                                    st.session_state.ai_analysis = analyze_consultation(patient_context_str, full_transcript_str)
-                                    st.rerun()
-                                                
+                                # Drain the queue entirely each loop
+                                while True:
+                                    text_item = webrtc_ctx.audio_processor.text_queue.get_nowait()
+                                    if text_item and text_item.strip():
+                                        st.session_state.transcript.append(text_item.strip() + " ")
+                                        collected_text = True
                             except queue.Empty:
                                 pass
+                                
+                            if collected_text:
+                                st.session_state.last_speech_time = time.time()
+                                st.session_state.transcript_changed_since_llm = True
+                                # Instantly update the UI placeholder without blocking the thread
+                                transcript_placeholder.markdown(
+                                    f"<div class='transcript-box'>{''.join(st.session_state.transcript)}</div>", 
+                                    unsafe_allow_html=True
+                                )
+                                
+                            # If 5 seconds have passed since the last tracked speech word, auto-analyze
+                            if st.session_state.transcript_changed_since_llm and (time.time() - st.session_state.last_speech_time > 5.0):
+                                st.session_state.transcript_changed_since_llm = False
+                                status_placeholder.info("Silence detected. AI is analyzing consultation...")
+                                full_transcript_str = "".join(st.session_state.transcript)
+                                patient_context_str = data.format_patient_summary(active_patient)
+                                st.session_state.ai_analysis = analyze_consultation(patient_context_str, full_transcript_str)
+                                st.rerun()
+                                
                         time.sleep(0.1)
+                else:
+                    st.session_state.was_playing = False
 
 # Right Column: AI Medical Assistant
 with col2:
