@@ -49,7 +49,6 @@ class PatientHistory(BaseModel):
     medications: list[str] = Field(default_factory=list)
     relevant_history: Optional[str] = None
 
-    # TODO update method
 
 # ---------------------------------------------------------------------------
 # Strategist output
