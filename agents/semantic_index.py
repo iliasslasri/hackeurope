@@ -28,7 +28,7 @@ import numpy as np
 import urllib.request, urllib.error
 from typing import List, Dict, Tuple, Optional
 from sklearn.feature_extraction.text import TfidfVectorizer
-from scorer import _normalise
+from agents.scorer import _normalise
 
 HIGH_THRESHOLD = 0.82
 LOW_THRESHOLD  = 0.58

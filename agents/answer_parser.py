@@ -47,7 +47,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Literal
 
-from scorer import _normalise, _tokenise
+from agents.scorer import _normalise, _tokenise
 
 # ---------------------------------------------------------------------------
 # Type alias

@@ -73,12 +73,11 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Literal, Union
 
-from scorer import (CandidateDiagnosis, _normalise, _tokenise,
+from agents.scorer import (CandidateDiagnosis, _normalise, _tokenise,
                     RNG, MC_SAMPLES, W_SYMPTOMS, W_RISK, W_PRIOR,
                     beta_variance_confidence)
-from answer_parser import FreeTextAnswerParser, ParsedAnswer
-from question_strategy import QuestionStrategy, Question
-from patient_record  import PatientRecord, StructuredObservationExtractor, apply_prior_modifiers
+from agents.answer_parser import FreeTextAnswerParser, ParsedAnswer
+from agents.question_strategy import QuestionStrategy, Question
 
 AnswerType = Literal["yes","no","mild","unsure","skip"]
 
@@ -373,8 +372,8 @@ class SequentialUpdater:
         Returns [] for open/narrative questions → apply_answer() will then
         mine symptom mentions from the patient's answer text instead.
         """
-        from scorer import _normalise
-        from semantic_index import SYNONYMS
+        from agents.scorer import _normalise
+        from agents.semantic_index import SYNONYMS
         q_norm   = _normalise(question_text)
         q_tokens = set(q_norm.split())
         found: set = set()
