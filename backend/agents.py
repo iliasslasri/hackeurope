@@ -1,5 +1,5 @@
 from backend.schemas import PatientHistory
-from backend.llm_client import call_llm
+from backend.llm_client import call_llm_sync
 from backend.prompts import INFORMATION_EXTRACTOR_SYSTEM, QUESTION_GENIE_SYSTEM, QUESTION_GENIE_USER_TEMPLATE
 from backend.schemas import AuraUIPayload
 from backend.triageGenie import update_patient
@@ -13,7 +13,7 @@ class AuraPipeline:
         
         # second call to generate the ai analysis
         prompt = QUESTION_GENIE_SYSTEM + QUESTION_GENIE_USER_TEMPLATE.format(patient_history_json=self.patient_history.to_json(), disease_name="covid-19")
-        diseases_question_json = call_llm(prompt, self.patient_history.to_json())
+        diseases_question_json = call_llm_sync(prompt, self.patient_history.to_json())
         
         ui_payload = AuraUIPayload(
             patient_history=self.patient_history,
