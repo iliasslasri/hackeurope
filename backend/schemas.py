@@ -143,3 +143,4 @@ class AuraUIPayload(BaseModel):
     questions_by_disease: list[DiseaseQuestions] = Field(default_factory=list)
     safety_issues: list[str] = Field(default_factory=list)
     approved_by_safety_reviewer: bool = True
+    updateUi: bool = True

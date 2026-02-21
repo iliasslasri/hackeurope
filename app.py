@@ -510,7 +510,10 @@ with col_left:
                         [f"{s}: {t}" for s, t in st.session_state.transcript]
                     )
                     
-                    st.session_state.ai_analysis = st.session_state.pipeline.run(full_transcript)
+                    
+                    new_analysis = st.session_state.pipeline.run(full_transcript)
+                    if new_analysis.updateUi:
+                        st.session_state.ai_analysis = new_analysis
                     st.rerun()
                     
             time.sleep(0.1)
@@ -526,7 +529,7 @@ with col_right:
     st.markdown('<div class="section-title">Differential Diagnosis (DDx)</div>',
                 unsafe_allow_html=True)
 
-    if payload.ddx:
+    if payload.updateUi and payload.ddx:
         html = ""
         for entry in payload.ddx:
             sev = entry.suspicion.value.lower()   # "high" / "medium" / "low"
@@ -550,7 +553,7 @@ with col_right:
         <span>💡</span> Clinical Gap Identified
     </div>""", unsafe_allow_html=True)
 
-    if payload.follow_up_question:
+    if payload.updateUi and payload.follow_up_question:
         st.markdown(
             f'<div class="clinical-gap-card"><p>{payload.follow_up_question}</p></div>',
             unsafe_allow_html=True)
@@ -561,7 +564,7 @@ with col_right:
         </div>""", unsafe_allow_html=True)
 
     # ── Safety Issues ────────────────────────────────────────────────────────
-    if payload.safety_issues:
+    if payload.updateUi and payload.safety_issues:
         st.markdown("""
         <div class="clinical-gap-header">
             <span>⚠️</span> Safety Review
@@ -573,7 +576,7 @@ with col_right:
             </div>""", unsafe_allow_html=True)
 
     # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
-    if payload.questions_by_disease:
+    if payload.updateUi and payload.questions_by_disease:
         st.markdown("""
         <div class="clinical-gap-header">
             <span>❓</span> Targeted Questions
