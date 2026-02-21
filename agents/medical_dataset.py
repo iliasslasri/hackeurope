@@ -15,7 +15,7 @@ from __future__ import annotations
 import pandas as pd
 import numpy as np
 from typing import Optional
-
+from datasets import load_dataset
 
 # ---------------------------------------------------------------------------
 # Built-in dataset
@@ -171,8 +171,8 @@ def try_load_huggingface_dataset() -> Optional[pd.DataFrame]:
     Returns None if the library or network is unavailable.
     """
     try:
-        from datasets import load_dataset
-        ds = load_dataset("QuyenAnhDE/Diseases_Symptoms", split="train")
+        
+        ds = load_dataset("QuyenAnhDE/Diseases_Symptoms")
         df = ds.to_pandas()
         # Normalise columns: expects 'Name', 'Symptoms' columns
         df = df.rename(columns={"Name": "disease", "Symptoms": "symptoms_raw"})
@@ -182,10 +182,11 @@ def try_load_huggingface_dataset() -> Optional[pd.DataFrame]:
         df["base_prevalence"] = 0.05  # unknown, use uniform prior
         return df[["disease", "symptoms", "risk_factors", "base_prevalence"]]
     except Exception:
+        print("Warning: Could not load HuggingFace dataset. Falling back to bundled dataset.")
         return None
 
 
-def load_dataset() -> tuple[pd.DataFrame, str]:
+def load_datasets() -> tuple[pd.DataFrame, str]:
     """Returns (dataframe, source_name)."""
     hf = try_load_huggingface_dataset()
     if hf is not None:
