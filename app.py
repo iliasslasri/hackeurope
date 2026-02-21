@@ -5,7 +5,8 @@ import streamlit as st
 from streamlit.components.v1 import html as st_html
 from dotenv import load_dotenv
 import data
-from assistant import analyze_consultation
+from backend.schemas import AuraUIPayload, DDxEntry, DiseaseQuestions
+from backend.agents import AuraPipeline
 
 load_dotenv()
 
@@ -30,11 +31,9 @@ st.set_page_config(
 if "transcript" not in st.session_state:
     st.session_state.transcript = []
 if "ai_analysis" not in st.session_state:
-    st.session_state.ai_analysis = {
-        "suggested_medications": [], "reminders": [],
-        "summary_notes": "Awaiting conversation start...",
-        "differential_diagnosis": [], "clinical_gaps": []
-    }
+    st.session_state.ai_analysis = AuraUIPayload()
+if "pipeline" not in st.session_state:
+    st.session_state.pipeline = AuraPipeline()
 if "current_patient_id" not in st.session_state:
     st.session_state.current_patient_id = "P001"
 if "speaker_mode" not in st.session_state:
@@ -594,10 +593,11 @@ with col_left:
                 st.session_state.speaker_mode = (
                     "Patient" if st.session_state.speaker_mode == "Doctor" else "Doctor")
 
-                ts = "\n".join([f"{s}: {t}" for s, t in st.session_state.transcript])
-                ps = data.format_patient_summary(active_patient)
+                full_transcript = "\n".join(
+                    [f"{s}: {t}" for s, t in st.session_state.transcript])
                 with st.spinner("Analyzing..."):
-                    st.session_state.ai_analysis = analyze_consultation(ps, ts)
+                    st.session_state.ai_analysis = st.session_state.pipeline.run(
+                        full_transcript)
                 st.rerun()
             else:
                 st.error(txt or "No speech detected.")
@@ -608,22 +608,20 @@ with col_left:
 
 # ─── RIGHT: DDx & Clinical Gaps (col-span-2) ────────────────────────────────
 with col_right:
-    analysis = st.session_state.ai_analysis
+    payload: AuraUIPayload = st.session_state.ai_analysis
 
     # ── DDx Tracker ──────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">Differential Diagnosis (DDx)</div>',
                 unsafe_allow_html=True)
 
-    ddx_items = analysis.get("differential_diagnosis", [])
-    if ddx_items:
+    if payload.ddx:
         html = ""
-        for item in ddx_items:
-            cond = item.get("condition", "Unknown")
-            sev = item.get("severity", "Low").lower()
+        for entry in payload.ddx:
+            sev = entry.suspicion.value.lower()   # "high" / "medium" / "low"
             cls = sev if sev in ("high", "medium", "low") else "low"
             html += f"""
             <div class="ddx-card {cls}">
-                <span class="condition">{cond}</span>
+                <span class="condition">{entry.disease}</span>
                 <span class="ddx-badge {cls}">{sev.capitalize()}</span>
             </div>"""
         st.markdown(html, unsafe_allow_html=True)
@@ -634,45 +632,65 @@ with col_right:
             Awaiting transcript data…</span>
         </div>""", unsafe_allow_html=True)
 
-    # ── Clinical Gap ─────────────────────────────────────────────────────────
-    gaps = analysis.get("clinical_gaps", []) or analysis.get("reminders", [])
-
+    # ── Clinical Gap / Follow-up Question ────────────────────────────────────
     st.markdown("""
     <div class="clinical-gap-header">
         <span>💡</span> Clinical Gap Identified
     </div>""", unsafe_allow_html=True)
 
-    if gaps:
-        for g in gaps:
-            st.markdown(f'<div class="clinical-gap-card"><p>{g}</p></div>',
-                        unsafe_allow_html=True)
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    if payload.follow_up_question:
+        st.markdown(
+            f'<div class="clinical-gap-card"><p>{payload.follow_up_question}</p></div>',
+            unsafe_allow_html=True)
     else:
         st.markdown("""
         <div class="clinical-gap-card" style="opacity:.5">
             <p>Clinical gaps will appear here as the consultation progresses.</p>
         </div>""", unsafe_allow_html=True)
 
-    # ── Suggested Medications ────────────────────────────────────────────────
-    meds = analysis.get("suggested_medications", [])
-    if meds:
+    # ── Safety Issues ────────────────────────────────────────────────────────
+    if payload.safety_issues:
         st.markdown("""
         <div class="clinical-gap-header">
-            <span>💊</span> Suggested Medications
+            <span>⚠️</span> Safety Review
         </div>""", unsafe_allow_html=True)
-        for m in meds:
+        for issue in payload.safety_issues:
             st.markdown(f"""
-            <div class="ddx-card low">
-                <span class="condition">{m}</span>
-                <span class="ddx-badge low">Rx</span>
+            <div class="ddx-card high">
+                <span class="condition">{issue}</span>
             </div>""", unsafe_allow_html=True)
 
-    # ── Summary ──────────────────────────────────────────────────────────────
-    summary = analysis.get("summary_notes", "")
-    if summary and summary != "Awaiting conversation start...":
+    # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
+    if payload.questions_by_disease:
         st.markdown("""
         <div class="clinical-gap-header">
-            <span>📝</span> Encounter Summary
+            <span>❓</span> Targeted Questions
         </div>""", unsafe_allow_html=True)
-        st.markdown(f'<div class="clinical-gap-card"><p>{summary}</p></div>',
-                    unsafe_allow_html=True)
+
+        for dq in payload.questions_by_disease:
+            with st.expander(f"🔬 {dq.disease}", expanded=False):
+                for q in dq.questions:
+                    target_colors = {
+                        "rule_in": ("#dcfce7", "#166534", "#bbf7d0"),
+                        "rule_out": ("#fee2e2", "#991b1b", "#fecaca"),
+                        "differentiate": ("#dbeafe", "#1e40af", "#bfdbfe"),
+                    }
+                    bg, fg, border = target_colors.get(
+                        q.target.value, ("#f1f5f9", "#334155", "#e2e8f0"))
+                    st.markdown(f"""
+                    <div style="background:{bg}; border:1px solid {border};
+                                border-radius:0.5rem; padding:0.75rem 1rem;
+                                margin-bottom:0.5rem;">
+                        <div style="font-weight:500; color:{fg}; font-size:0.9rem;
+                                    margin-bottom:0.25rem;">
+                            {q.question}
+                        </div>
+                        <div style="font-size:0.8rem; color:#64748b; line-height:1.5;">
+                            {q.clinical_rationale}
+                        </div>
+                        <span style="font-size:0.7rem; font-weight:600;
+                                     color:{fg}; text-transform:uppercase;
+                                     letter-spacing:0.05em;">
+                            {q.target.value.replace('_', ' ')}
+                        </span>
+                    </div>""", unsafe_allow_html=True)
