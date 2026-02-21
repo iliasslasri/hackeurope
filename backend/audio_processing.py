@@ -88,6 +88,8 @@ class AudioStreamingProcessor:
             retries = 3
             while retries > 0:
                 try:
+                    # Enable websocket trace logging for debugging
+                    # websocket.enableTrace(True)
                     self.ws = websocket.WebSocketApp(
                         self.ws_url,
                         header=[f"x-api-key: {self.api_key}"],
