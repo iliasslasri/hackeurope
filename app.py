@@ -51,14 +51,17 @@ def _merge_ddx(
     for new_entry in incoming:
         key = new_entry.disease.lower().strip()
         if key in merged:
-            # Update suspicion level if the new signal is stronger
+            # Always update probability_pct and supporting evidence;
+            # update suspicion level if the new signal differs.
+            updates = {
+                "probability_pct": new_entry.probability_pct,
+                "key_supporting": new_entry.key_supporting or merged[key].key_supporting,
+            }
             old_rank = _SUSPICION_RANK.get(merged[key].suspicion.value, 0)
             new_rank = _SUSPICION_RANK.get(new_entry.suspicion.value, 0)
             if new_rank != old_rank:
-                merged[key] = merged[key].model_copy(
-                    update={"suspicion": new_entry.suspicion,
-                            "key_supporting": new_entry.key_supporting or merged[key].key_supporting}
-                )
+                updates["suspicion"] = new_entry.suspicion
+            merged[key] = merged[key].model_copy(update=updates)
         else:
             # Brand-new disease — append
             merged[key] = new_entry
