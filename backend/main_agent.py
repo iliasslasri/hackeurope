@@ -29,6 +29,9 @@ def _patient_to_scorer_inputs(patient: PatientHistory) -> tuple[str, str]:
     symptoms_text  = ", ".join(patient.symptoms)
 
     anamnesis_parts = list(patient.risk_factors)
+    # Include medications since they can be risk factors for drug reactions
+    if patient.medications:
+        anamnesis_parts.extend(patient.medications)
     if patient.relevant_history:
         anamnesis_parts.append(patient.relevant_history)
     anamnesis_text = ". ".join(anamnesis_parts)

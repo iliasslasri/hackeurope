@@ -127,6 +127,16 @@ if "patient_history" not in st.session_state:
         ph.relevant_history = f"**{active_patient.get('name', 'Unknown')}** ({active_patient.get('age', 'N/A')} {active_patient.get('gender', 'N/A')}). "
         if active_patient.get("allergies") and active_patient["allergies"] != ["None"]:
             ph.relevant_history += f"Allergies: {', '.join(active_patient['allergies'])}. "
+        past_visits = active_patient.get("past_visits", [])
+        if past_visits:
+            ph.relevant_history += "Previous visits: "
+            for visit in past_visits:
+                ph.relevant_history += (
+                    f"[{visit.get('date', 'N/A')}] "
+                    f"{visit.get('chief_complaint', '')} → "
+                    f"Dx: {visit.get('diagnosis', '')}. "
+                    f"Tx: {visit.get('treatment', '')}. "
+                )
     st.session_state.patient_history = ph
 
 if "pipeline" not in st.session_state:
@@ -1004,18 +1014,48 @@ if webrtc_ctx.state.playing:
                         matched_patient_data = data.get_patient_by_id(matched_id)
                         
                         from backend.schemas import PatientHistory as _PH
+                        # Carry forward ALL existing clinical data from the transcript
+                        old_ph = st.session_state.patient_history
                         ph = _PH()
                         if matched_patient_data:
                             ph.patient_name = new_ph.patient_name
-                            ph.symptoms = new_ph.symptoms
-                            ph.risk_factors = matched_patient_data.get("past_medical_history", [])
+                            # Keep symptoms extracted from the conversation
+                            ph.symptoms = list(set(new_ph.symptoms or old_ph.symptoms))
+                            ph.negated_symptoms = list(set(new_ph.negated_symptoms or old_ph.negated_symptoms))
+                            ph.duration = new_ph.duration or old_ph.duration
+                            ph.severity = new_ph.severity or old_ph.severity
+                            # Merge risk factors from JSON + any extracted from conversation
+                            ph.risk_factors = list(set(
+                                matched_patient_data.get("past_medical_history", [])
+                                + (new_ph.risk_factors or [])
+                            ))
                             ph.medications = matched_patient_data.get("current_medications", [])
                             ph.relevant_history = f"**{matched_patient_data.get('name', 'Unknown')}** ({matched_patient_data.get('age', 'N/A')} {matched_patient_data.get('gender', 'N/A')}). "
                             if matched_patient_data.get("allergies") and matched_patient_data["allergies"] != ["None"]:
                                 ph.relevant_history += f"Allergies: {', '.join(matched_patient_data['allergies'])}. "
+                            # Include past visit history for cross-visit intelligence
+                            past_visits = matched_patient_data.get("past_visits", [])
+                            if past_visits:
+                                ph.relevant_history += "Previous visits: "
+                                for visit in past_visits:
+                                    ph.relevant_history += (
+                                        f"[{visit.get('date', 'N/A')}] "
+                                        f"{visit.get('chief_complaint', '')} → "
+                                        f"Dx: {visit.get('diagnosis', '')}. "
+                                        f"Tx: {visit.get('treatment', '')}. "
+                                    )
+                            # Append the AI-generated clinical summary if available
+                            if new_ph.relevant_history:
+                                ph.relevant_history += new_ph.relevant_history
                                 
                         st.session_state.patient_history = ph
                         st.session_state.pipeline = AuraPipeline(initial_history=st.session_state.patient_history)
+                        # Re-run pipeline with full transcript so DDx uses medication context
+                        full_transcript = "".join(st.session_state.transcript)
+                        if full_transcript.strip():
+                            rerun_analysis = st.session_state.pipeline.run(full_transcript)
+                            if rerun_analysis.updateUi:
+                                st.session_state.ai_analysis = rerun_analysis
                         st.rerun()
                 
                 if new_ph != st.session_state.patient_history:

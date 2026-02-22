@@ -349,6 +349,23 @@ BUNDLED_DATA = [
      ["persistent dry cough", "shortness of breath", "fatigue", "swollen lymph nodes", "tender red bumps on shins", "blurred vision"],
      ["young adulthood", "family history", "occupational exposure to dust/mold"],
      0.002),
+
+    ("Drug Hypersensitivity Reaction",
+     ["rash", "itching", "hives", "skin rash", "maculopapular rash", "urticaria",
+      "fever", "facial swelling", "joint pain", "skin warmth", "bumps on skin",
+      "rash on chest", "rash on back", "rash on arms", "spreading rash",
+      "raised rash", "bumpy rash", "warm skin"],
+     ["recent antibiotic use", "amoxicillin use", "penicillin use", "new medication",
+      "drug allergy history", "sulfonamide allergy", "history of drug reaction",
+      "recent medication change"],
+     0.08),
+
+    ("Contact Dermatitis",
+     ["rash", "itching", "redness", "dry skin", "blisters", "burning", "swelling",
+      "skin warmth", "bumps on skin", "raised rash"],
+     ["new soap or detergent", "occupational exposure", "nickel exposure",
+      "latex exposure", "cosmetics change", "environmental irritants"],
+     0.10),
 ]
 
 
