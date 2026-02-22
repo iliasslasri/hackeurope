@@ -686,22 +686,24 @@ with col_left:
     render_patient_history()
 
     # ── Voice Recording Button (WebRTC) ───────────────────────────────────────
-    # Centered recording label
-    is_recording = st.session_state.get("was_playing", False)
-    rec_label = "🔴 Recording…" if is_recording else "Press to start consultation"
-    rec_color = "#ef4444" if is_recording else "#94a3b8"
-    st.markdown(
-        f'<div style="text-align:center;font-size:0.82rem;font-weight:500;color:{rec_color};margin-top:1.5rem;">'
-        f'{rec_label}</div>',
-        unsafe_allow_html=True,
-    )
-
+    # We call webrtc_streamer FIRST so we can get its fresh `state.playing` value
     webrtc_ctx = webrtc_streamer(
         key="speech_to_text",
         mode=WebRtcMode.SENDONLY,
         audio_processor_factory=AudioStreamingProcessor,
         rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
         media_stream_constraints={"video": False, "audio": True},
+    )
+
+    # Use the fresh state for rendering ALL UI dynamically
+    is_recording = webrtc_ctx.state.playing
+
+    rec_label = "🔴 Recording…" if is_recording else "Press to start consultation"
+    rec_color = "#ef4444" if is_recording else "#94a3b8"
+    st.markdown(
+        f'<div style="text-align:center;font-size:0.82rem;font-weight:500;color:{rec_color};margin-top:1.5rem;">'
+        f'{rec_label}</div>',
+        unsafe_allow_html=True,
     )
 
     # Hide the WebRTC iframe dynamically but keep it in the DOM so it functions
@@ -749,7 +751,7 @@ with col_left:
     # Render our custom native button and a script that explicitly forwards clicks
     # to the hidden WebRTC iframe's START button.
     
-    # Conditional styles based on recording state
+    # Conditional styles based on fresh recording state
     is_rec_str = str(is_recording).lower()
     button_inner_radius = "8px" if is_recording else "50%"
     button_inner_size = "24px" if is_recording else "32px"

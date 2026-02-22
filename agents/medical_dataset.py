@@ -188,8 +188,9 @@ def try_load_huggingface_dataset() -> Optional[pd.DataFrame]:
         df["risk_factors"] = [[] for _ in range(len(df))]
         df["base_prevalence"] = 0.05  # unknown, use uniform prior
         return df[["disease", "symptoms", "risk_factors", "base_prevalence"]]
-    except Exception:
-        print("Warning: Could not load HuggingFace dataset. Falling back to bundled dataset.")
+    except Exception as e:
+        print(f"Warning: Could not load HuggingFace dataset. Exception: {e}")
+        print("Falling back to bundled dataset...")
         return None
 
 
