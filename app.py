@@ -397,6 +397,32 @@ html, body, * , [class*="css"] {
     border-radius: 0.75rem;
     border: none;
 }
+
+/* ── Expandable Section ─────────────────────────────────────────────────────── */
+.expandable-container {
+    max-height: 120px;
+    overflow: hidden;
+    transition: max-height 0.5s ease-in-out;
+    position: relative;
+}
+.expandable-container:hover {
+    max-height: 2000px;
+}
+.expandable-container::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 50px;
+    background: linear-gradient(transparent, #f8fafc);
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+.expandable-container:hover::after {
+    opacity: 0;
+}
+
 div[data-testid="stVerticalBlock"] > div[style*="border"] {
     background: white;
     border: 1px solid #e2e8f0 !important;
@@ -545,7 +571,7 @@ with col_right:
                 unsafe_allow_html=True)
 
     if payload.updateUi and payload.ddx:
-        html = ""
+        html = '<div class="expandable-container">'
         for entry in payload.ddx:
             sev = entry.suspicion.value.lower()   # "high" / "medium" / "low"
             cls = sev if sev in ("high", "medium", "low") else "low"
@@ -554,12 +580,15 @@ with col_right:
                 <span class="condition">{entry.disease}</span>
                 <span class="ddx-badge {cls}">{sev.capitalize()}</span>
             </div>"""
+        html += "</div>"
         st.markdown(html, unsafe_allow_html=True)
     else:
         st.markdown("""
-        <div class="ddx-card low" style="opacity:.4; cursor:default">
-            <span class="condition" style="color:#94a3b8; font-weight:400">
-            Awaiting transcript data…</span>
+        <div class="expandable-container">
+            <div class="ddx-card low" style="opacity:.4; cursor:default">
+                <span class="condition" style="color:#94a3b8; font-weight:400">
+                Awaiting transcript data…</span>
+            </div>
         </div>""", unsafe_allow_html=True)
 
     # ── Clinical Gap / Follow-up Question ────────────────────────────────────
@@ -570,12 +599,14 @@ with col_right:
 
     if payload.updateUi and payload.follow_up_question:
         st.markdown(
-            f'<div class="clinical-gap-card"><p>{payload.follow_up_question}</p></div>',
+            f'<div class="expandable-container"><div class="clinical-gap-card"><p>{payload.follow_up_question}</p></div></div>',
             unsafe_allow_html=True)
     else:
         st.markdown("""
-        <div class="clinical-gap-card" style="opacity:.5">
-            <p>Clinical gaps will appear here as the consultation progresses.</p>
+        <div class="expandable-container">
+            <div class="clinical-gap-card" style="opacity:.5">
+                <p>Clinical gaps will appear here as the consultation progresses.</p>
+            </div>
         </div>""", unsafe_allow_html=True)
 
     # ── Safety Issues ────────────────────────────────────────────────────────
@@ -584,11 +615,14 @@ with col_right:
         <div class="clinical-gap-header">
             <span>⚠️</span> Safety Review
         </div>""", unsafe_allow_html=True)
+        html = '<div class="expandable-container">'
         for issue in payload.safety_issues:
-            st.markdown(f"""
+            html += f"""
             <div class="ddx-card high">
                 <span class="condition">{issue}</span>
-            </div>""", unsafe_allow_html=True)
+            </div>"""
+        html += "</div>"
+        st.markdown(html, unsafe_allow_html=True)
 
     # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
     if payload.updateUi and payload.questions_by_disease:
