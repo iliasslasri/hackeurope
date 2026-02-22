@@ -439,21 +439,11 @@ with col_left:
                 <div>No dialogue recorded yet.<br>Start the consultation below.</div>
             </div>"""
         else:
-            for speaker, text in st.session_state.transcript:
-                if speaker == "Doctor":
-                    # Doctor = user role → flex-row-reverse, indigo avatar, indigo bubble
-                    transcript_html += f"""
-                    <div class="msg-row doctor">
-                        <div class="avatar-icon doctor">🩺</div>
-                        <div class="msg-bubble doctor">{text}</div>
-                    </div>"""
-                else:
-                    # Patient = assistant role → flex-row, emerald avatar, slate bubble
-                    transcript_html += f"""
-                    <div class="msg-row patient">
-                        <div class="avatar-icon patient">👤</div>
-                        <div class="msg-bubble patient">{text}</div>
-                    </div>"""
+            joined_text = "".join(st.session_state.transcript)
+            transcript_html = f"""
+            <div style="padding: 1rem; color: #1e293b; font-size: 1.05rem; line-height: 1.6;">
+                {joined_text}
+            </div>"""
         transcript_placeholder.markdown(f'<div class="transcript-panel" id="transcript-auto-scroll">{transcript_html}</div>', unsafe_allow_html=True)
 
     render_transcript()
@@ -482,14 +472,7 @@ with col_left:
                     while True:
                         text_item = webrtc_ctx.audio_processor.text_queue.get_nowait()
                         if text_item and text_item.strip():
-                            # If we have no transcript, start a new tuple
-                            if not st.session_state.transcript:
-                                st.session_state.transcript.append(("Doctor", text_item.strip() + " "))
-                            else:
-                                # Append to the last tuple to avoid spawning 1000s of chat bubbles
-                                speaker, existing_text = st.session_state.transcript[-1]
-                                st.session_state.transcript[-1] = (speaker, existing_text + text_item.strip() + " ")
-                                
+                            st.session_state.transcript.append(text_item.strip() + " ")
                             collected_text = True
                 except queue.Empty:
                     pass
@@ -505,11 +488,9 @@ with col_left:
                     st.session_state.transcript_changed_since_llm = False
                     status_placeholder.info("Silence detected. AI is analyzing consultation...")
                     
-                    # Construct the full_transcript exactly like before
-                    full_transcript = "\\n".join(
-                        [f"{s}: {t}" for s, t in st.session_state.transcript]
-                    )
-                    
+                    # Construct the full_transcript
+                    full_transcript = "".join(st.session_state.transcript)
+
                     st.session_state.ai_analysis = st.session_state.pipeline.run(full_transcript)
                     st.rerun()
                     
