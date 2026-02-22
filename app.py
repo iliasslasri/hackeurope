@@ -120,8 +120,8 @@ if "speaker_mode" not in st.session_state:
 
 if "was_playing" not in st.session_state:
     st.session_state.was_playing = False
-if "last_speech_time" not in st.session_state:
-    st.session_state.last_speech_time = time.time()
+if "last_pipeline_run" not in st.session_state:
+    st.session_state.last_pipeline_run = 0.0
 if "transcript_changed_since_llm" not in st.session_state:
     st.session_state.transcript_changed_since_llm = False
 
@@ -730,38 +730,41 @@ with col_right:
 
     # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
     if payload.questions_by_disease:
-        st.markdown("""
-        <div class="clinical-gap-header">
-            <span>❓</span> Targeted Questions
-        </div>""", unsafe_allow_html=True)
+        TARGET_COLORS = {
+            "rule_in":      ("#dcfce7", "#166534", "#bbf7d0"),
+            "rule_out":     ("#fee2e2", "#991b1b", "#fecaca"),
+            "differentiate":("#dbeafe", "#1e40af", "#bfdbfe"),
+        }
+
+        # Build one HTML block — hover reveals questions (no click needed)
+        html = '<div class="clinical-gap-header"><span>❓</span> Targeted Questions</div>'
+        html += '<style>'
+        html += '.dq-card{position:relative;margin-bottom:0.5rem;border-radius:0.75rem;border:1px solid #e2e8f0;background:#fff;overflow:hidden;transition:box-shadow .2s;}'
+        html += '.dq-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1);}'
+        html += '.dq-header{display:flex;align-items:center;gap:0.5rem;padding:0.65rem 1rem;font-size:0.875rem;font-weight:600;color:#1e293b;cursor:default;}'
+        html += '.dq-questions{max-height:0;overflow:hidden;transition:max-height .35s ease,padding .2s;}'
+        html += '.dq-card:hover .dq-questions{max-height:600px;padding-bottom:0.75rem;}'
+        html += '.dq-q{margin:0 0.75rem 0.5rem;padding:0.65rem 0.9rem;border-radius:0.5rem;border:1px solid;}'
+        html += '.dq-q-text{font-weight:500;font-size:0.875rem;margin-bottom:0.2rem;}'
+        html += '.dq-q-rationale{font-size:0.78rem;color:#64748b;line-height:1.5;}'
+        html += '.dq-q-tag{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:0.3rem;display:inline-block;}'
+        html += '</style>'
 
         for dq in payload.questions_by_disease:
-            with st.expander(f"🔬 {dq.disease}", expanded=False):
-                for q in dq.questions:
-                    target_colors = {
-                        "rule_in": ("#dcfce7", "#166534", "#bbf7d0"),
-                        "rule_out": ("#fee2e2", "#991b1b", "#fecaca"),
-                        "differentiate": ("#dbeafe", "#1e40af", "#bfdbfe"),
-                    }
-                    bg, fg, border = target_colors.get(
-                        q.target.value, ("#f1f5f9", "#334155", "#e2e8f0"))
-                    st.markdown(f"""
-                    <div style="background:{bg}; border:1px solid {border};
-                                border-radius:0.5rem; padding:0.75rem 1rem;
-                                margin-bottom:0.5rem;">
-                        <div style="font-weight:500; color:{fg}; font-size:0.9rem;
-                                    margin-bottom:0.25rem;">
-                            {q.question}
-                        </div>
-                        <div style="font-size:0.8rem; color:#64748b; line-height:1.5;">
-                            {q.clinical_rationale}
-                        </div>
-                        <span style="font-size:0.7rem; font-weight:600;
-                                     color:{fg}; text-transform:uppercase;
-                                     letter-spacing:0.05em;">
-                            {q.target.value.replace('_', ' ')}
-                        </span>
-                    </div>""", unsafe_allow_html=True)
+            html += f'<div class="dq-card"><div class="dq-header">🔬 {dq.disease}</div><div class="dq-questions">'
+            for q in dq.questions:
+                bg, fg, border = TARGET_COLORS.get(q.target.value, ("#f1f5f9", "#334155", "#e2e8f0"))
+                label = q.target.value.replace("_", " ")
+                html += (
+                    f'<div class="dq-q" style="background:{bg};border-color:{border};">'
+                    f'<div class="dq-q-text" style="color:{fg};">{q.question}</div>'
+                    f'<div class="dq-q-rationale">{q.clinical_rationale}</div>'
+                    f'<span class="dq-q-tag" style="color:{fg};">{label}</span>'
+                    f'</div>'
+                )
+            html += '</div></div>'
+
+        st.markdown(html, unsafe_allow_html=True)
 if webrtc_ctx.state.playing:
     st.session_state.was_playing = True
     status_placeholder.info("Listening... (streaming to Gradium API)")
@@ -779,54 +782,21 @@ if webrtc_ctx.state.playing:
                 pass
 
             if collected_text:
-                st.session_state.last_speech_time = time.time()
                 st.session_state.transcript_changed_since_llm = True
                 # Show live pulsing dot while accumulating speech
                 render_patient_history(is_live=True)
 
-            # After 1 s of silence — run the full pipeline
-            if st.session_state.transcript_changed_since_llm and (
-                time.time() - st.session_state.last_speech_time > 1.0
+            # Run the pipeline every 5 s if the transcript has new content
+            if (
+                st.session_state.transcript_changed_since_llm
+                and time.time() - st.session_state.last_pipeline_run >= 5.0
             ):
                 st.session_state.transcript_changed_since_llm = False
-                status_placeholder.info("Silence detected. AI is analysing consultation...")
+                st.session_state.last_pipeline_run = time.time()
+                status_placeholder.info("AI is analysing consultation...")
 
-                # ── use real transcript in production; mock for demo ──────────
+                # use real transcript
                 full_transcript = "".join(st.session_state.transcript)
-                _full_transcript = """Cardiologist: Good morning. What brings you in today?
-
-Patient: Hi, Doctor. I've been having some chest discomfort over the past few days.
-
-Cardiologist: I see. Can you describe the discomfort? Is it sharp, dull, pressure-like?
-
-Patient: It feels like a tight pressure in the center of my chest. Sometimes it spreads to my left arm.
-
-Cardiologist: How long does it usually last?
-
-Patient: Around 10 to 15 minutes, especially when I'm walking fast or climbing stairs.
-
-Cardiologist: Does it improve when you rest?
-
-Patient: Yes, it usually goes away after I sit down for a few minutes.
-
-Cardiologist: Have you noticed shortness of breath, sweating, nausea, or dizziness during these episodes?
-
-Patient: I do feel a bit short of breath, and once I felt slightly nauseous.
-
-Cardiologist: Do you have any medical conditions such as high blood pressure, diabetes, or high cholesterol?
-
-Patient: I was told my cholesterol is a bit high last year.
-
-Cardiologist: Do you smoke or have a family history of heart disease?
-
-Patient: My father had a heart attack in his early 50s. I don't smoke, though.
-
-Cardiologist: Thank you for sharing that. Based on your symptoms and risk factors, I'd like to run some tests — an ECG, blood work, and possibly a stress test — to check how your heart is functioning.
-
-Patient: Is it serious?
-
-Cardiologist: It could be a sign of reduced blood flow to the heart, but we'll confirm with tests. The important thing is that you came in early. We'll take good care of you.
-"""
                 new_analysis = st.session_state.pipeline.run(full_transcript)
                 print("new_analysis", new_analysis)
 

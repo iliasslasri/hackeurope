@@ -162,7 +162,7 @@ OUTPUT FORMAT (return ONLY valid JSON):
 }
 
 Rules:
-- Generate AT LEAST 3 questions per disease.
+- Generate EXACTLY 3 concise questions per disease — no more, no fewer.
 - Questions must be specific — avoid generic open-ended prompts.
 - Each question must directly address a pathognomonic feature, risk factor,
   or discriminating criterion for the given disease.
@@ -178,7 +178,7 @@ PATIENT HISTORY:
 
 CANDIDATE DISEASE: {disease_name}
 
-Generate at least 3 targeted clinical questions to investigate {disease_name}.
+Generate exactly 3 targeted clinical questions to investigate {disease_name}.
 """
 
 # ---------------------------------------------------------------------------

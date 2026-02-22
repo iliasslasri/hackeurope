@@ -30,6 +30,9 @@ from agents.MedicalDiagnosisAgent import MedicalDiagnosisAgent
 
 logger = logging.getLogger(__name__)
 
+# Maximum number of diseases to generate questions for (keeps parallel calls small)
+_QUESTION_TOP_K = 3
+
 
 def _patient_to_scorer_inputs(patient: PatientHistory) -> tuple[str, str]:
     """
@@ -128,7 +131,8 @@ class AuraPipeline:
             ))
 
         # Extract plain disease names for the downstream questionGenie
-        candidate_diseases: list[str] = [c.disease for c in raw_candidates]
+        # Only generate questions for the top-K diseases to keep latency low
+        candidate_diseases: list[str] = [c.disease for c in raw_candidates[:_QUESTION_TOP_K]]
 
         if not candidate_diseases:
             # Not enough symptom signal to rank — return partial payload
@@ -138,7 +142,7 @@ class AuraPipeline:
                 updateUi=True,
             )
 
-        # Step 3 — Generate targeted clinical questions for each candidate disease
+        # Step 3 — Generate targeted clinical questions (parallel LLM calls)
         questions_result = await generate_questions_async(
             patient_history=self.patient_history.model_dump(),
             candidate_diseases=candidate_diseases,
