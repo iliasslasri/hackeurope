@@ -130,6 +130,7 @@ class AuraPipeline:
                 disease=c.disease,
                 suspicion=susp,
                 probability_pct=round(c.probability_raw * 100, 1),
+                confidence=round(c.confidence * 100, 1),
                 key_supporting=[m[0] for m in c.top_matches]
             ))
 

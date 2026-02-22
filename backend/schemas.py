@@ -67,9 +67,9 @@ class DDxEntry(BaseModel):
     disease: str
     suspicion: SuspicionLevel
     probability_pct: float = 0.0  # probability as percentage (e.g. 42.3)
+    confidence: float = 0.0       # confidence as percentage
     key_supporting: list[str] = Field(default_factory=list)
     key_against: list[str] = Field(default_factory=list)
-
 
 class StrategistOutput(BaseModel):
     """Full output from the Strategist agent."""

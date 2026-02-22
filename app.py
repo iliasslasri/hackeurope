@@ -871,8 +871,11 @@ with col_right:
             pct = f"{entry.probability_pct:.1f}%"
             html += f"""
             <div class="ddx-card {cls}">
-                <span class="condition">{entry.disease}</span>
-                <span class="ddx-badge {cls}">{pct}</span>
+                <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                    <span class="condition">{entry.disease}</span>
+                    <span style="font-size:0.75rem; color:#64748b; font-weight:500;">Probability: {pct}</span>
+                </div>
+                <span class="ddx-badge {cls}">{entry.confidence:.1f}% Conf.</span>
             </div>"""
         st.markdown(html, unsafe_allow_html=True)
     else:
