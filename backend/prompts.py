@@ -208,8 +208,11 @@ Merging rules:
   combined text coherent and free of redundancy. If nothing new is worth adding,
   keep the existing text unchanged.
 
+- PATIENT_NAME: Extract the patient's full or first name if explicitly stated in introductions (e.g., "Hi, I'm John"). Do NOT remove existing ones.
+
 OUTPUT FORMAT (return ONLY valid JSON, no prose):
 {
+  "patient_name": "<identified patient name or null>",
   "symptoms": ["<symptom>", ...],
   "duration": "<duration or null>",
   "severity": "<mild | moderate | severe | null>",

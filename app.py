@@ -108,13 +108,27 @@ if "transcript" not in st.session_state:
     st.session_state.transcript = []
 if "ai_analysis" not in st.session_state:
     st.session_state.ai_analysis = AuraUIPayload()
+if "current_patient_id" not in st.session_state:
+    st.session_state.current_patient_id = None
+
+active_patient = data.get_patient_by_id(st.session_state.current_patient_id)
+
 if "patient_history" not in st.session_state:
     from backend.schemas import PatientHistory as _PH
-    st.session_state.patient_history = _PH()
+    # Seed the PatientHistory object with the JSON data
+    ph = _PH()
+    if active_patient:
+        ph.symptoms = []
+        ph.risk_factors = active_patient.get("past_medical_history", [])
+        ph.medications = active_patient.get("current_medications", [])
+        ph.relevant_history = f"**{active_patient.get('name', 'Unknown')}** ({active_patient.get('age', 'N/A')} {active_patient.get('gender', 'N/A')}). "
+        if active_patient.get("allergies") and active_patient["allergies"] != ["None"]:
+            ph.relevant_history += f"Allergies: {', '.join(active_patient['allergies'])}. "
+    st.session_state.patient_history = ph
+
 if "pipeline" not in st.session_state:
-    st.session_state.pipeline = AuraPipeline()
-if "current_patient_id" not in st.session_state:
-    st.session_state.current_patient_id = "P001"
+    # Pass the seeded history into the pipeline so it doesn't start blank
+    st.session_state.pipeline = AuraPipeline(initial_history=st.session_state.patient_history)
 if "speaker_mode" not in st.session_state:
     st.session_state.speaker_mode = "Doctor"
 
@@ -125,7 +139,6 @@ if "last_pipeline_run" not in st.session_state:
 if "transcript_changed_since_llm" not in st.session_state:
     st.session_state.transcript_changed_since_llm = False
 
-active_patient = data.get_patient_by_id(st.session_state.current_patient_id)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CSS — Pixel-perfect match to the React/Tailwind source
@@ -568,13 +581,22 @@ div[data-testid="stVerticalBlock"] > div[style*="border"] {
 # ══════════════════════════════════════════════════════════════════════════════
 #  HEADER
 # ══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<div class="aura-header" style="margin-bottom:2rem">
-    <h1>Aura</h1>
-    <div class="aura-subtitle">Real-time Clinical Decision Support</div>
-</div>
-""", unsafe_allow_html=True)
+header_col1, header_col2 = st.columns([3, 2], gap="large")
+with header_col1:
+    st.markdown("""
+    <div class="aura-header" style="margin-bottom:2rem">
+        <h1>Aura</h1>
+        <div class="aura-subtitle">Real-time Clinical Decision Support</div>
+    </div>
+    """, unsafe_allow_html=True)
 
+with header_col2:
+    if st.session_state.current_patient_id:
+        active_patient_opt = data.get_patient_by_id(st.session_state.current_patient_id)
+        p_name = active_patient_opt.get("name", "Unknown") if active_patient_opt else "Unknown"
+        st.markdown(f'<div style="text-align:right; color:#0f172a; font-weight:600; font-size:1.1rem; padding-top:1rem;">Patient: {p_name}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div style="text-align:right; color:#64748b; font-style:italic; padding-top:1rem;">Listening for patient name...</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MAIN LAYOUT — grid-cols-5: 3/5 left, 2/5 right, gap-8
@@ -802,6 +824,37 @@ if webrtc_ctx.state.playing:
 
                 # ── Always sync PatientHistory — even when updateUi is False ──
                 new_ph = new_analysis.patient_history
+                
+                # ── Identity Extraction Logic ──
+                if st.session_state.current_patient_id is None and new_ph.patient_name:
+                    extracted_name = new_ph.patient_name.lower().strip()
+                    all_patients = data.get_all_patients()
+                    matched_id = None
+                    for p in all_patients:
+                        db_name = p.get("name", "").lower()
+                        if extracted_name in db_name or db_name in extracted_name:
+                            matched_id = p.get("id")
+                            break
+                    
+                    if matched_id:
+                        st.session_state.current_patient_id = matched_id
+                        matched_patient_data = data.get_patient_by_id(matched_id)
+                        
+                        from backend.schemas import PatientHistory as _PH
+                        ph = _PH()
+                        if matched_patient_data:
+                            ph.patient_name = new_ph.patient_name
+                            ph.symptoms = new_ph.symptoms
+                            ph.risk_factors = matched_patient_data.get("past_medical_history", [])
+                            ph.medications = matched_patient_data.get("current_medications", [])
+                            ph.relevant_history = f"**{matched_patient_data.get('name', 'Unknown')}** ({matched_patient_data.get('age', 'N/A')} {matched_patient_data.get('gender', 'N/A')}). "
+                            if matched_patient_data.get("allergies") and matched_patient_data["allergies"] != ["None"]:
+                                ph.relevant_history += f"Allergies: {', '.join(matched_patient_data['allergies'])}. "
+                                
+                        st.session_state.patient_history = ph
+                        st.session_state.pipeline = AuraPipeline(initial_history=st.session_state.patient_history)
+                        st.rerun()
+                
                 if new_ph != st.session_state.patient_history:
                     st.session_state.patient_history = new_ph
                     # Update the panel immediately so the doctor sees it

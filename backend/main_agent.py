@@ -61,8 +61,8 @@ class AuraPipeline:
     payload  = pipeline.run(transcript_chunk)         # each time new text arrives
     """
 
-    def __init__(self, top_k: int = 5) -> None:
-        self.patient_history = PatientHistory()
+    def __init__(self, initial_history: PatientHistory = None, top_k: int = 5) -> None:
+        self.patient_history = initial_history or PatientHistory()
         self._top_k = top_k
         # FIX Bug 2: constructor takes (verbose, hf_token), NOT top_k.
         # Initialise once — the scorer loads datasets and builds a semantic index.
