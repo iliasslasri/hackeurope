@@ -1,0 +1,22 @@
+{
+    "id": "donald_trump",
+    "name": "Donald Trump",
+    "age": 77,
+    "gender": "Male",
+    "allergies": [
+        "None explicitly known (reported sensitivity to some antibiotics)"
+    ],
+    "past_medical_history": [
+        "Coronary Artery Disease (mild/stable)",
+        "Hyperlipidemia",
+        "Rosacea",
+        "COVID-19 infection (Oct 2020)"
+    ],
+    "current_medications": [
+        "Rosuvastatin 40mg (cholesterol)",
+        "Aspirin 81mg (daily preventative)",
+        "Finasteride 1mg (hair loss)",
+        "Multivitamin",
+        "Tetracycline (for rosacea)"
+    ]
+}
