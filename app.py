@@ -15,6 +15,77 @@ from backend.audio_processing import AudioStreamingProcessor
 
 load_dotenv()
 
+# ── DDx merge helpers ─────────────────────────────────────────────────────────
+_SUSPICION_RANK = {
+    "High":   2,
+    "Medium": 1,
+    "Low":    0,
+}
+DDX_MAX = 7   # Maximum number of DDx entries to keep at any time
+
+
+def _merge_ddx(
+    existing: list,
+    incoming: list,
+    max_entries: int = DDX_MAX,
+) -> list:
+    """
+    Merge two DDx lists without ever cancelling an existing diagnosis.
+
+    Rules
+    -----
+    1. Existing entries are always kept (their suspicion level is updated if
+       the new analysis raises or lowers confidence for that disease).
+    2. Genuinely new diseases (not in the existing list) are appended.
+    3. If the merged list exceeds *max_entries*, the entry with the lowest
+       suspicion level that was added *earliest* (highest rank number = lowest
+       priority) is removed.  Only removes one entry per call so the list
+       converges gradually rather than jumping.
+    4. Ranks are re-numbered 1..N after every merge.
+    """
+    # Index existing entries by normalised disease name
+    merged: dict[str, DDxEntry] = {
+        e.disease.lower().strip(): e for e in existing
+    }
+
+    for new_entry in incoming:
+        key = new_entry.disease.lower().strip()
+        if key in merged:
+            # Update suspicion level if the new signal is stronger
+            old_rank = _SUSPICION_RANK.get(merged[key].suspicion.value, 0)
+            new_rank = _SUSPICION_RANK.get(new_entry.suspicion.value, 0)
+            if new_rank != old_rank:
+                merged[key] = merged[key].model_copy(
+                    update={"suspicion": new_entry.suspicion,
+                            "key_supporting": new_entry.key_supporting or merged[key].key_supporting}
+                )
+        else:
+            # Brand-new disease — append
+            merged[key] = new_entry
+
+    result = list(merged.values())
+
+    # Enforce cap: drop oldest entry with lowest suspicion when over limit
+    while len(result) > max_entries:
+        # Sort ascending by suspicion rank so the weakest candidate is first;
+        # among ties, the one with the highest rank number (added earliest /
+        # ranked lowest) is chosen for removal.
+        result.sort(
+            key=lambda e: (
+                _SUSPICION_RANK.get(e.suspicion.value, 0),
+                -e.rank,
+            )
+        )
+        result.pop(0)   # remove the lowest-confidence / oldest entry
+
+    # Re-number ranks 1..N sorted by suspicion descending
+    result.sort(key=lambda e: _SUSPICION_RANK.get(e.suspicion.value, 0), reverse=True)
+    for i, entry in enumerate(result, start=1):
+        entry = entry.model_copy(update={"rank": i})
+        result[i - 1] = entry
+
+    return result
+
 def transcribe_audio(audio_bytes):
     url = "https://api.elevenlabs.io/v1/speech-to-text"
     headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY", "")}
@@ -37,6 +108,24 @@ if "transcript" not in st.session_state:
     st.session_state.transcript = []
 if "ai_analysis" not in st.session_state:
     st.session_state.ai_analysis = AuraUIPayload()
+if "current_patient_id" not in st.session_state:
+    st.session_state.current_patient_id = None
+
+active_patient = data.get_patient_by_id(st.session_state.current_patient_id)
+
+if "patient_history" not in st.session_state:
+    from backend.schemas import PatientHistory as _PH
+    # Seed the PatientHistory object with the JSON data
+    ph = _PH()
+    if active_patient:
+        ph.symptoms = []
+        ph.risk_factors = active_patient.get("past_medical_history", [])
+        ph.medications = active_patient.get("current_medications", [])
+        ph.relevant_history = f"**{active_patient.get('name', 'Unknown')}** ({active_patient.get('age', 'N/A')} {active_patient.get('gender', 'N/A')}). "
+        if active_patient.get("allergies") and active_patient["allergies"] != ["None"]:
+            ph.relevant_history += f"Allergies: {', '.join(active_patient['allergies'])}. "
+    st.session_state.patient_history = ph
+
 if "pipeline" not in st.session_state:
     # Pass the seeded history into the pipeline so it doesn't start blank
     st.session_state.pipeline = AuraPipeline(initial_history=st.session_state.patient_history)
@@ -193,6 +282,90 @@ html, body, * , [class*="css"] {
     justify-content: center;
 }
 .empty-state .icon { font-size: 2rem; margin-bottom: 0.75rem; }
+
+/* ── Patient History Panel ─────────────────────────────────────────────────── */
+.ph-panel {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    min-height: 380px;
+    overflow-y: auto;
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+/* section label */
+.ph-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 0.5rem;
+}
+/* symptom / risk chips */
+.ph-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.ph-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: 1px solid;
+    line-height: 1.4;
+}
+.ph-chip.symptom   { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+.ph-chip.negated   { background:#f8fafc; color:#94a3b8; border-color:#e2e8f0;
+                     text-decoration: line-through; }
+.ph-chip.risk      { background:#fff7ed; color:#c2410c; border-color:#fed7aa; }
+.ph-chip.med       { background:#f0fdf4; color:#166534; border-color:#bbf7d0; }
+/* meta row (duration / severity) */
+.ph-meta-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.ph-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.82rem;
+    color: #475569;
+    font-weight: 500;
+}
+.ph-meta-pill strong { color: #1e293b; }
+/* history prose box */
+.ph-history-box {
+    background: #f8fafc;
+    border-left: 3px solid #6366f1;
+    border-radius: 0 0.5rem 0.5rem 0;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    color: #334155;
+    line-height: 1.65;
+    font-style: italic;
+}
+/* listening pulse dot */
+@keyframes ph-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
+.ph-live-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #ef4444;
+    display: inline-block;
+    animation: ph-pulse 1.4s ease-in-out infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+}
 
 /* ── Form Input ────────────────────────────────────────────────────────────── */
 /* bg-slate-50 border border-slate-200 rounded-lg pl-4 pr-12 py-3 */
@@ -395,32 +568,6 @@ html, body, * , [class*="css"] {
     border-radius: 0.75rem;
     border: none;
 }
-
-/* ── Expandable Section ─────────────────────────────────────────────────────── */
-.expandable-container {
-    max-height: 120px;
-    overflow: hidden;
-    transition: max-height 0.5s ease-in-out;
-    position: relative;
-}
-.expandable-container:hover {
-    max-height: 2000px;
-}
-.expandable-container::after {
-    content: "";
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: 50px;
-    background: linear-gradient(transparent, #f8fafc);
-    pointer-events: none;
-    transition: opacity 0.3s;
-}
-.expandable-container:hover::after {
-    opacity: 0;
-}
-
 div[data-testid="stVerticalBlock"] > div[style*="border"] {
     background: white;
     border: 1px solid #e2e8f0 !important;
@@ -456,30 +603,84 @@ with header_col2:
 # ══════════════════════════════════════════════════════════════════════════════
 col_left, col_right = st.columns([3, 2], gap="large")
 
-# ─── LEFT: Live Transcript (col-span-3) ──────────────────────────────────────
+# ─── LEFT: Patient History (col-span-3) ─────────────────────────────────────
 with col_left:
-    st.markdown('<div class="section-title">Consultation Transcript</div>',
+    st.markdown('<div class="section-title">Patient Clinical Profile</div>',
                 unsafe_allow_html=True)
 
-    transcript_placeholder = st.empty()
-    
-    def render_transcript():
-        transcript_html = ""
-        if not st.session_state.transcript:
-            transcript_html = """
-            <div class="empty-state">
-                <div class="icon">💬</div>
-                <div>No dialogue recorded yet.<br>Start the consultation below.</div>
-            </div>"""
-        else:
-            joined_text = "".join(st.session_state.transcript)
-            transcript_html = f"""
-            <div style="padding: 1rem; color: #1e293b; font-size: 1.05rem; line-height: 1.6;">
-                {joined_text}
-            </div>"""
-        transcript_placeholder.markdown(f'<div class="transcript-panel" id="transcript-auto-scroll">{transcript_html}</div>', unsafe_allow_html=True)
+    ph_placeholder = st.empty()
 
-    render_transcript()
+    def _chips(items: list, cls: str, icon: str = "") -> str:
+        if not items:
+            return '<span style="color:#cbd5e1;font-size:0.82rem;">None recorded yet</span>'
+        return "".join(
+            f'<span class="ph-chip {cls}">{icon + " " if icon else ""}{item}</span>'
+            for item in items
+        )
+
+    def render_patient_history(is_live: bool = False):
+        ph = st.session_state.patient_history
+        has_data = bool(
+            ph.symptoms or ph.risk_factors or ph.medications
+            or ph.duration or ph.severity or ph.relevant_history
+        )
+
+        live_str = '<span class="ph-live-dot"></span> Listening…' if is_live else ""
+
+        if not has_data:
+            content = '<div class="empty-state">' \
+                      '<div class="icon">🩺</div>' \
+                      '<div>Clinical data will appear here as the consultation progresses.<br>' \
+                     f'{live_str}</div>' \
+                      '</div>'
+        else:
+            # ── Symptoms ─────────────────────────────────────────────────────
+            sym_html = _chips(ph.symptoms, "symptom", "●")
+            neg_html = _chips(ph.negated_symptoms, "negated", "✕") if ph.negated_symptoms else ""
+
+            # ── Risk factors & meds ──────────────────────────────────────────
+            risk_html = _chips(ph.risk_factors, "risk", "⚠")
+            med_html  = _chips(ph.medications,  "med",  "💊")
+
+            # ── Meta (duration / severity) ────────────────────────────────────
+            meta_parts = []
+            if ph.duration:
+                meta_parts.append(f'<span class="ph-meta-pill">⏱ Duration: <strong>{ph.duration}</strong></span>')
+            if ph.severity:
+                meta_parts.append(f'<span class="ph-meta-pill">📊 Severity: <strong>{ph.severity}</strong></span>')
+            meta_html = "<div class='ph-meta-row'>" + "".join(meta_parts) + "</div>" if meta_parts else ""
+
+            # ── Relevant history prose ────────────────────────────────────────
+            hist_html = ""
+            if ph.relevant_history:
+                hist_html = f'<div class="ph-history-box">{ph.relevant_history}</div>'
+
+            content = '<div>' \
+                      '<div class="ph-label">Symptoms</div>' \
+                     f'<div class="ph-chips">{sym_html}</div>' \
+                      '</div>'
+            if neg_html:
+                content += f'<div><div class="ph-label">Ruled Out</div><div class="ph-chips">{neg_html}</div></div>'
+            content += '<div>' \
+                       '<div class="ph-label">Risk Factors</div>' \
+                      f'<div class="ph-chips">{risk_html}</div>' \
+                       '</div>' \
+                       '<div>' \
+                       '<div class="ph-label">Current Medications</div>' \
+                      f'<div class="ph-chips">{med_html}</div>' \
+                       '</div>'
+            content += meta_html
+            if hist_html:
+                content += f'<div><div class="ph-label">Clinical Summary</div>{hist_html}</div>'
+            if live_str:
+                content += f'<div style="margin-top:0.25rem;font-size:0.75rem;color:#94a3b8;">{live_str}</div>'
+
+        ph_placeholder.markdown(
+            f'<div class="ph-panel">{content}</div>',
+            unsafe_allow_html=True
+        )
+
+    render_patient_history()
 
     # ── Voice Recording Button (WebRTC) ───────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
@@ -508,10 +709,11 @@ with col_right:
         for entry in payload.ddx:
             sev = entry.suspicion.value.lower()   # "high" / "medium" / "low"
             cls = sev if sev in ("high", "medium", "low") else "low"
+            pct = f"{entry.probability_pct:.1f}%"
             html += f"""
             <div class="ddx-card {cls}">
                 <span class="condition">{entry.disease}</span>
-                <span class="ddx-badge {cls}">{sev.capitalize()}</span>
+                <span class="ddx-badge {cls}">{pct}</span>
             </div>"""
         st.markdown(html, unsafe_allow_html=True)
     else:
@@ -589,12 +791,11 @@ with col_right:
 if webrtc_ctx.state.playing:
     st.session_state.was_playing = True
     status_placeholder.info("Listening... (streaming to Gradium API)")
-    
+
     while webrtc_ctx.state.playing:
         if webrtc_ctx.audio_processor:
             collected_text = False
             try:
-                # Drain the queue to get real-time words
                 while True:
                     text_item = webrtc_ctx.audio_processor.text_queue.get_nowait()
                     if text_item and text_item.strip():
@@ -602,158 +803,80 @@ if webrtc_ctx.state.playing:
                         collected_text = True
             except queue.Empty:
                 pass
-                
+
             if collected_text:
                 st.session_state.transcript_changed_since_llm = True
-                # Instantly update the UI placeholder without blocking the thread
-                render_transcript()
-                
-            # If 5 seconds of silence happened, auto-analyze
-            if st.session_state.transcript_changed_since_llm and (time.time() - st.session_state.last_speech_time > 1.0):
+                # Show live pulsing dot while accumulating speech
+                render_patient_history(is_live=True)
+
+            # Run the pipeline every 5 s if the transcript has new content
+            if (
+                st.session_state.transcript_changed_since_llm
+                and time.time() - st.session_state.last_pipeline_run >= 5.0
+            ):
                 st.session_state.transcript_changed_since_llm = False
-                status_placeholder.info("Silence detected. AI is analyzing consultation...")
+                st.session_state.last_pipeline_run = time.time()
+                status_placeholder.info("AI is analysing consultation...")
+
+                # use real transcript
+                full_transcript = "".join(st.session_state.transcript)
+                new_analysis = st.session_state.pipeline.run(full_transcript)
+                print("new_analysis", new_analysis)
+
+                # ── Always sync PatientHistory — even when updateUi is False ──
+                new_ph = new_analysis.patient_history
                 
-                # Construct the full_transcript
-                # full_transcript = "".join(st.session_state.transcript)
-                full_transcript = """Cardiologist: Good morning. What brings you in today?
-
-Patient: Hi, Doctor. I've been having some chest discomfort over the past few days.
-
-Cardiologist: I see. Can you describe the discomfort? Is it sharp, dull, pressure-like?
-
-Patient: It feels like a tight pressure in the center of my chest. Sometimes it spreads to my left arm.
-
-Cardiologist: How long does it usually last?
-
-Patient: Around 10 to 15 minutes, especially when I'm walking fast or climbing stairs.
-
-Cardiologist: Does it improve when you rest?
-
-Patient: Yes, it usually goes away after I sit down for a few minutes.
-
-Cardiologist: Have you noticed shortness of breath, sweating, nausea, or dizziness during these episodes?
-
-Patient: I do feel a bit short of breath, and once I felt slightly nauseous.
-
-Cardiologist: Do you have any medical conditions such as high blood pressure, diabetes, or high cholesterol?
-
-Patient: I was told my cholesterol is a bit high last year.
-
-Cardiologist: Do you smoke or have a family history of heart disease?
-
-Patient: My father had a heart attack in his early 50s. I don't smoke, though.
-
-Cardiologist: Thank you for sharing that. Based on your symptoms and risk factors, I'd like to run some tests — an ECG, blood work, and possibly a stress test — to check how your heart is functioning.
-
-Patient: Is it serious?
-
-Cardiologist: It could be a sign of reduced blood flow to the heart, but we'll confirm with tests. The important thing is that you came in early. We'll take good care of you.
-"""
-                    st.session_state.ai_analysis.updateUi = True
-                    new_analysis = st.session_state.pipeline.run(full_transcript)
-                    print("new_analysis", new_analysis)
-                    if new_analysis.updateUi:
-                        st.session_state.ai_analysis = new_analysis
-                    st.rerun()
+                # ── Identity Extraction Logic ──
+                if st.session_state.current_patient_id is None and new_ph.patient_name:
+                    extracted_name = new_ph.patient_name.lower().strip()
+                    all_patients = data.get_all_patients()
+                    matched_id = None
+                    for p in all_patients:
+                        db_name = p.get("name", "").lower()
+                        if extracted_name in db_name or db_name in extracted_name:
+                            matched_id = p.get("id")
+                            break
                     
-            time.sleep(0.1)
-    else:
-        st.session_state.was_playing = False
+                    if matched_id:
+                        st.session_state.current_patient_id = matched_id
+                        matched_patient_data = data.get_patient_by_id(matched_id)
+                        
+                        from backend.schemas import PatientHistory as _PH
+                        ph = _PH()
+                        if matched_patient_data:
+                            ph.patient_name = new_ph.patient_name
+                            ph.symptoms = new_ph.symptoms
+                            ph.risk_factors = matched_patient_data.get("past_medical_history", [])
+                            ph.medications = matched_patient_data.get("current_medications", [])
+                            ph.relevant_history = f"**{matched_patient_data.get('name', 'Unknown')}** ({matched_patient_data.get('age', 'N/A')} {matched_patient_data.get('gender', 'N/A')}). "
+                            if matched_patient_data.get("allergies") and matched_patient_data["allergies"] != ["None"]:
+                                ph.relevant_history += f"Allergies: {', '.join(matched_patient_data['allergies'])}. "
+                                
+                        st.session_state.patient_history = ph
+                        st.session_state.pipeline = AuraPipeline(initial_history=st.session_state.patient_history)
+                        st.rerun()
+                
+                if new_ph != st.session_state.patient_history:
+                    st.session_state.patient_history = new_ph
+                    # Update the panel immediately so the doctor sees it
+                    # without waiting for a full st.rerun()
+                    render_patient_history(is_live=True)
 
+                if new_analysis.updateUi:
+                    # Merge DDx — never cancel existing diagnoses
+                    merged_ddx = _merge_ddx(
+                        existing=st.session_state.ai_analysis.ddx,
+                        incoming=new_analysis.ddx,
+                    )
+                    new_analysis = new_analysis.model_copy(
+                        update={"ddx": merged_ddx}
+                    )
+                    st.session_state.ai_analysis = new_analysis
+                    payload = st.session_state.ai_analysis
 
-# ─── RIGHT: DDx & Clinical Gaps (col-span-2) ────────────────────────────────
-with col_right:
-    payload: AuraUIPayload = st.session_state.ai_analysis
+                # Rerun to refresh full UI (DDx, questions, etc.)
+                st.rerun()
 
-    # ── DDx Tracker ──────────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Differential Diagnosis (DDx)</div>',
-                unsafe_allow_html=True)
-
-    if payload.updateUi and payload.ddx:
-        html = '<div class="expandable-container">'
-        for entry in payload.ddx:
-            sev = entry.suspicion.value.lower()   # "high" / "medium" / "low"
-            cls = sev if sev in ("high", "medium", "low") else "low"
-            html += f"""
-            <div class="ddx-card {cls}">
-                <span class="condition">{entry.disease}</span>
-                <span class="ddx-badge {cls}">{sev.capitalize()}</span>
-            </div>"""
-        html += "</div>"
-        st.markdown(html, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="expandable-container">
-            <div class="ddx-card low" style="opacity:.4; cursor:default">
-                <span class="condition" style="color:#94a3b8; font-weight:400">
-                Awaiting transcript data…</span>
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-    # ── Clinical Gap / Follow-up Question ────────────────────────────────────
-    st.markdown("""
-    <div class="clinical-gap-header">
-        <span>💡</span> Clinical Gap Identified
-    </div>""", unsafe_allow_html=True)
-
-    if payload.updateUi and payload.follow_up_question:
-        st.markdown(
-            f'<div class="expandable-container"><div class="clinical-gap-card"><p>{payload.follow_up_question}</p></div></div>',
-            unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="expandable-container">
-            <div class="clinical-gap-card" style="opacity:.5">
-                <p>Clinical gaps will appear here as the consultation progresses.</p>
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-    # ── Safety Issues ────────────────────────────────────────────────────────
-    if payload.updateUi and payload.safety_issues:
-        st.markdown("""
-        <div class="clinical-gap-header">
-            <span>⚠️</span> Safety Review
-        </div>""", unsafe_allow_html=True)
-        html = '<div class="expandable-container">'
-        for issue in payload.safety_issues:
-            html += f"""
-            <div class="ddx-card high">
-                <span class="condition">{issue}</span>
-            </div>"""
-        html += "</div>"
-        st.markdown(html, unsafe_allow_html=True)
-
-    # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
-    if payload.updateUi and payload.questions_by_disease:
-        st.markdown("""
-        <div class="clinical-gap-header">
-            <span>❓</span> Targeted Questions
-        </div>""", unsafe_allow_html=True)
-
-        for dq in payload.questions_by_disease:
-            with st.expander(f"🔬 {dq.disease}", expanded=False):
-                for q in dq.questions:
-                    target_colors = {
-                        "rule_in": ("#dcfce7", "#166534", "#bbf7d0"),
-                        "rule_out": ("#fee2e2", "#991b1b", "#fecaca"),
-                        "differentiate": ("#dbeafe", "#1e40af", "#bfdbfe"),
-                    }
-                    bg, fg, border = target_colors.get(
-                        q.target.value, ("#f1f5f9", "#334155", "#e2e8f0"))
-                    st.markdown(f"""
-                    <div style="background:{bg}; border:1px solid {border};
-                                border-radius:0.5rem; padding:0.75rem 1rem;
-                                margin-bottom:0.5rem;">
-                        <div style="font-weight:500; color:{fg}; font-size:0.9rem;
-                                    margin-bottom:0.25rem;">
-                            {q.question}
-                        </div>
-                        <div style="font-size:0.8rem; color:#64748b; line-height:1.5;">
-                            {q.clinical_rationale}
-                        </div>
-                        <span style="font-size:0.7rem; font-weight:600;
-                                     color:{fg}; text-transform:uppercase;
-                                     letter-spacing:0.05em;">
-                            {q.target.value.replace('_', ' ')}
-                        </span>
-                    </div>""", unsafe_allow_html=True)
+        time.sleep(0.1)
+else:
+    st.session_state.was_playing = False

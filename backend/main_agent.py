@@ -80,17 +80,9 @@ class AuraPipeline:
         history_changed = updated_history != self.patient_history
         self.patient_history = updated_history
 
-        # Skip if: nothing new AND we already have a scored DDx
-        # (first-time scoring always runs once symptoms >= 3)
-        if not history_changed and not qa_pairs and self._has_ddx:
-            logger.info("AuraPipeline: no new info and DDx already available — skipping.")
-            return AuraUIPayload(
-                patient_history=self.patient_history,
-                updateUi=False,
-            )
-
-        # Guard: require at least 3 symptoms before scoring
-        if len(self.patient_history.symptoms) < 2:
+        # Skip if: nothing new
+        if not history_changed and not qa_pairs:
+            logger.info("AuraPipeline: no new info — skipping.")
             return AuraUIPayload(
                 patient_history=self.patient_history,
                 updateUi=False,
@@ -124,6 +116,7 @@ class AuraPipeline:
         raw_candidates = self._medical_ai.get_candidates() or []
 
         ddx_entries = []
+        print("raw_candidates ", raw_candidates)
         for i, c in enumerate(raw_candidates, start=1):
             if c.probability_label in ["Very High", "High"]:
                 susp = SuspicionLevel.HIGH
@@ -136,6 +129,7 @@ class AuraPipeline:
                 rank=i,
                 disease=c.disease,
                 suspicion=susp,
+                probability_pct=round(c.probability_raw * 100, 1),
                 key_supporting=[m[0] for m in c.top_matches]
             ))
 

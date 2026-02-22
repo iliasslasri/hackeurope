@@ -66,6 +66,7 @@ class DDxEntry(BaseModel):
     rank: int
     disease: str
     suspicion: SuspicionLevel
+    probability_pct: float = 0.0  # probability as percentage (e.g. 42.3)
     key_supporting: list[str] = Field(default_factory=list)
     key_against: list[str] = Field(default_factory=list)
 
@@ -145,3 +146,4 @@ class AuraUIPayload(BaseModel):
     safety_issues: list[str] = Field(default_factory=list)
     approved_by_safety_reviewer: bool = True
     updateUi: bool = True
+    confidence: float = 0.0 # confidence score between 0 and 1
