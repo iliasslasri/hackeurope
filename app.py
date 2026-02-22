@@ -484,13 +484,46 @@ with col_left:
                     render_transcript()
                     
                 # If 5 seconds of silence happened, auto-analyze
-                if st.session_state.transcript_changed_since_llm and (time.time() - st.session_state.last_speech_time > 5.0):
+                if st.session_state.transcript_changed_since_llm and (time.time() - st.session_state.last_speech_time > 1.0):
                     st.session_state.transcript_changed_since_llm = False
                     status_placeholder.info("Silence detected. AI is analyzing consultation...")
                     
                     # Construct the full_transcript
-                    full_transcript = "".join(st.session_state.transcript)
-                    
+                    # full_transcript = "".join(st.session_state.transcript)
+                    full_transcript = """Cardiologist: Good morning. What brings you in today?
+
+Patient: Hi, Doctor. I've been having some chest discomfort over the past few days.
+
+Cardiologist: I see. Can you describe the discomfort? Is it sharp, dull, pressure-like?
+
+Patient: It feels like a tight pressure in the center of my chest. Sometimes it spreads to my left arm.
+
+Cardiologist: How long does it usually last?
+
+Patient: Around 10 to 15 minutes, especially when I'm walking fast or climbing stairs.
+
+Cardiologist: Does it improve when you rest?
+
+Patient: Yes, it usually goes away after I sit down for a few minutes.
+
+Cardiologist: Have you noticed shortness of breath, sweating, nausea, or dizziness during these episodes?
+
+Patient: I do feel a bit short of breath, and once I felt slightly nauseous.
+
+Cardiologist: Do you have any medical conditions such as high blood pressure, diabetes, or high cholesterol?
+
+Patient: I was told my cholesterol is a bit high last year.
+
+Cardiologist: Do you smoke or have a family history of heart disease?
+
+Patient: My father had a heart attack in his early 50s. I don't smoke, though.
+
+Cardiologist: Thank you for sharing that. Based on your symptoms and risk factors, I'd like to run some tests — an ECG, blood work, and possibly a stress test — to check how your heart is functioning.
+
+Patient: Is it serious?
+
+Cardiologist: It could be a sign of reduced blood flow to the heart, but we'll confirm with tests. The important thing is that you came in early. We'll take good care of you.
+"""
                     new_analysis = st.session_state.pipeline.run(full_transcript)
                     print("new_analysis", new_analysis)
                     if new_analysis.updateUi:
