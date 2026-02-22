@@ -488,11 +488,8 @@ with col_left:
                     st.session_state.transcript_changed_since_llm = False
                     status_placeholder.info("Silence detected. AI is analyzing consultation...")
                     
-                    # Construct the full_transcript exactly like before
-                    full_transcript = "\\n".join(
-                        [f"{s}: {t}" for s, t in st.session_state.transcript]
-                    )
-                    
+                    # Construct the full_transcript
+                    full_transcript = "".join(st.session_state.transcript)
                     
                     new_analysis = st.session_state.pipeline.run(full_transcript)
                     if new_analysis.updateUi:
