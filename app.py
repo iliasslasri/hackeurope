@@ -524,6 +524,7 @@ Patient: Is it serious?
 
 Cardiologist: It could be a sign of reduced blood flow to the heart, but we'll confirm with tests. The important thing is that you came in early. We'll take good care of you.
 """
+                    st.session_state.ai_analysis.updateUi = True
                     new_analysis = st.session_state.pipeline.run(full_transcript)
                     print("new_analysis", new_analysis)
                     if new_analysis.updateUi:
