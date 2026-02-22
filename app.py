@@ -952,7 +952,7 @@ with col_right:
         st.markdown(html, unsafe_allow_html=True)
 if webrtc_ctx.state.playing:
     st.session_state.was_playing = True
-    status_placeholder.info("Listening... (streaming to Gradium API)")
+    status_placeholder.info("Listening...")
 
     while webrtc_ctx.state.playing:
         if webrtc_ctx.audio_processor:
