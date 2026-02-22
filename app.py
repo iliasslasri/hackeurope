@@ -818,6 +818,7 @@ if webrtc_ctx.state.playing:
                         update={"ddx": merged_ddx}
                     )
                     st.session_state.ai_analysis = new_analysis
+                    payload = st.session_state.ai_analysis
 
                 # Rerun to refresh full UI (DDx, questions, etc.)
                 st.rerun()
