@@ -16,7 +16,7 @@ from agents.question_strategy import Question
 logger = logging.getLogger(__name__)
 
 # Maximum number of diseases to generate questions for (keeps parallel calls small)
-_QUESTION_TOP_K = 3
+_QUESTION_TOP_K = 5
 
 
 def _patient_to_scorer_inputs(patient: PatientHistory) -> tuple[str, str]:

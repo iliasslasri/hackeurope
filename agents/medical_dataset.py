@@ -24,7 +24,7 @@ from typing import Optional
 
 BUNDLED_DATA = [
     # Each row: disease, symptoms (list), risk_factors (list), base_prevalence
-    ("Common Cold",
+    ("Common Cold", 
      ["runny nose", "sneezing", "sore throat", "cough", "mild fever", "congestion", "fatigue"],
      ["contact with infected person", "winter season", "immunodeficiency"],
      0.30),
@@ -151,6 +151,204 @@ BUNDLED_DATA = [
      ["deep vein thrombosis", "prolonged immobility", "surgery", "cancer",
       "oral contraceptives", "pregnancy", "obesity"],
      0.01),
+     ("Hyperthyroidism",
+     ["unintentional weight loss", "rapid heartbeat", "increased appetite", "nervousness", "anxiety", "tremor", "sweating", "heat intolerance", "fatigue"],
+     ["female sex", "family history of thyroid disease", "excessive iodine intake", "Graves' disease"],
+     0.01),
+
+    ("Peptic Ulcer Disease",
+     ["burning stomach pain", "bloating", "heartburn", "nausea", "intolerance to fatty foods", "dark or bloody stools", "unexplained weight loss"],
+     ["H. pylori infection", "long-term NSAID use", "smoking", "excessive alcohol consumption", "stress"],
+     0.05),
+
+    ("Osteoarthritis",
+     ["joint pain", "stiffness", "tenderness", "loss of flexibility", "grating sensation", "bone spurs", "swelling"],
+     ["elderly", "obesity", "joint injuries", "repeated stress on the joint", "genetics", "female sex"],
+     0.12),
+
+    ("Rheumatoid Arthritis",
+     ["tender joints", "swollen joints", "joint stiffness", "fatigue", "fever", "loss of appetite"],
+     ["female sex", "family history of RA", "smoking", "obesity", "environmental exposures"],
+     0.01),
+
+    ("Chronic Obstructive Pulmonary Disease",
+     ["shortness of breath", "wheezing", "chest tightness", "chronic cough", "cyanosis", "frequent respiratory infections", "lack of energy"],
+     ["smoking", "long-term exposure to chemical fumes", "air pollution exposure", "genetics"],
+     0.06),
+
+    ("Chronic Kidney Disease",
+     ["nausea", "vomiting", "loss of appetite", "fatigue", "sleep problems", "changes in urination", "decreased mental sharpness", "muscle cramps", "swelling of feet"],
+     ["diabetes", "hypertension", "heart disease", "smoking", "obesity", "family history of kidney disease", "elderly"],
+     0.14),
+
+    ("Gout",
+     ["intense joint pain", "lingering discomfort", "inflammation", "redness", "limited range of motion"],
+     ["male sex", "obesity", "high purine diet", "alcohol consumption", "hypertension", "diabetes", "kidney disease"],
+     0.04),
+
+    ("Irritable Bowel Syndrome",
+     ["abdominal pain", "bloating", "gas", "diarrhea", "constipation", "mucus in stool"],
+     ["female sex", "young age", "family history of IBS", "anxiety", "depression", "food sensitivities"],
+     0.11),
+
+    ("Celiac Disease",
+     ["diarrhea", "fatigue", "weight loss", "bloating", "gas", "abdominal pain", "nausea", "constipation"],
+     ["family history of celiac disease", "type 1 diabetes", "down syndrome", "autoimmune thyroid disease"],
+     0.01),
+
+    ("Eczema",
+     ["dry skin", "itching", "red to brownish-gray patches", "small raised bumps", "thickened cracked skin", "raw sensitive skin"],
+     ["family history of eczema", "allergies", "asthma", "environmental irritants"],
+     0.10),
+
+    ("Psoriasis",
+     ["red patches of skin", "silvery scales", "dry cracked skin", "itching", "burning", "soreness", "thickened pitted nails", "swollen joints"],
+     ["family history of psoriasis", "stress", "smoking", "obesity", "heavy alcohol consumption"],
+     0.03),
+
+    ("Multiple Sclerosis",
+     ["numbness", "tingling", "electric-shock sensations", "tremor", "lack of coordination", "unsteady gait", "vision loss", "fatigue", "slurred speech"],
+     ["female sex", "young adulthood", "family history of MS", "vitamin D deficiency", "smoking"],
+     0.001),
+
+    ("Parkinson's Disease",
+     ["tremor", "slowed movement", "rigid muscles", "impaired posture", "loss of automatic movements", "speech changes", "writing changes"],
+     ["elderly", "male sex", "family history of Parkinson's", "exposure to toxins"],
+     0.01),
+
+    ("Alzheimer's Disease",
+     ["memory loss", "confusion with time or place", "difficulty completing familiar tasks", "misplacing things", "poor judgment", "withdrawal from social activities"],
+     ["elderly", "family history of Alzheimer's", "genetics", "head trauma", "sedentary lifestyle", "hypertension"],
+     0.05),
+
+    ("Atrial Fibrillation",
+     ["palpitations", "weakness", "reduced ability to exercise", "fatigue", "lightheadedness", "dizziness", "shortness of breath", "chest pain"],
+     ["elderly", "hypertension", "obesity", "heart disease", "alcohol consumption", "sleep apnea", "family history"],
+     0.02),
+
+    ("Sleep Apnea",
+     ["loud snoring", "episodes in which you stop breathing", "gasping for air", "morning headache", "insomnia", "excessive daytime sleepiness", "irritability"],
+     ["obesity", "male sex", "elderly", "smoking", "nasal congestion", "family history"],
+     0.09),
+
+    ("Fibromyalgia",
+     ["widespread pain", "fatigue", "cognitive difficulties", "sleep disturbances", "headache", "depression", "anxiety"],
+     ["female sex", "family history of fibromyalgia", "osteoarthritis", "rheumatoid arthritis", "lupus"],
+     0.04),
+
+    ("Lyme Disease",
+     ["fever", "chills", "headache", "fatigue", "muscle and joint aches", "swollen lymph nodes", "erythema migrans rash"],
+     ["outdoor activities in wooded areas", "exposure to deer ticks", "summer season"],
+     0.005),
+
+    ("Polycystic Ovary Syndrome",
+     ["irregular periods", "excess androgen", "polycystic ovaries", "weight gain", "thinning hair", "acne"],
+     ["obesity", "family history of PCOS", "insulin resistance"],
+     0.08),
+
+    ("Pleurisy",
+     ["sharp chest pain", "shortness of breath", "cough", "fever"],
+     ["pneumonia", "viral infection", "pulmonary embolism", "rib fracture", "lung cancer"],
+     0.01),
+     ("Bacterial Meningitis",
+     ["high fever", "stiff neck", "severe headache", "nausea", "vomiting", "confusion", "sensitivity to light", "seizures", "skin rash"],
+     ["young age", "community living", "skipping vaccinations", "immunodeficiency"],
+     0.001),
+
+    ("Acute Myocardial Infarction",
+     ["crushing chest pain", "shortness of breath", "nausea", "sweating", "pain radiating to jaw", "pain radiating to left arm", "anxiety", "lightheadedness"],
+     ["hypertension", "hyperlipidemia", "smoking", "diabetes", "obesity", "family history of heart disease", "male sex"],
+     0.03),
+
+    ("Diverticulitis",
+     ["left lower abdominal pain", "fever", "nausea", "vomiting", "constipation", "abdominal tenderness", "bloating"],
+     ["elderly", "low fiber diet", "obesity", "smoking", "sedentary lifestyle"],
+     0.04),
+
+    ("Cholecystitis",
+     ["right upper abdominal pain", "pain radiating to right shoulder", "nausea", "vomiting", "fever", "tenderness when touched", "bloating"],
+     ["female sex", "pregnancy", "obesity", "rapid weight loss", "elderly", "gallstones"],
+     0.05),
+
+    ("Crohn's Disease",
+     ["diarrhea", "abdominal cramping", "blood in stool", "fatigue", "unintentional weight loss", "mouth sores", "fistulas"],
+     ["family history of IBD", "smoking", "young age", "high fat diet"],
+     0.005),
+
+    ("Pulmonary Tuberculosis",
+     ["persistent cough", "coughing up blood", "chest pain", "unintentional weight loss", "fatigue", "fever", "night sweats", "chills"],
+     ["immunodeficiency", "travel to high-risk areas", "substance abuse", "healthcare work", "homelessness"],
+     0.002),
+
+    ("Deep Vein Thrombosis",
+     ["leg pain", "leg swelling", "redness of the skin", "warmth in the affected leg"],
+     ["prolonged immobility", "surgery", "oral contraceptives", "smoking", "cancer", "pregnancy", "obesity"],
+     0.02),
+
+    ("Pancreatitis",
+     ["upper abdominal pain radiating to back", "abdominal tenderness", "fever", "rapid pulse", "nausea", "vomiting"],
+     ["alcohol consumption", "gallstones", "high triglycerides", "obesity", "abdominal surgery"],
+     0.01),
+
+    ("Hypoglycemia",
+     ["shakiness", "sweating", "dizziness", "fast heartbeat", "hunger", "confusion", "irritability", "blurred vision"],
+     ["insulin use", "skipping meals", "excessive exercise", "alcohol consumption", "liver disease"],
+     0.06),
+
+    ("Hyperglycemic Hyperosmolar State",
+     ["extreme thirst", "frequent urination", "dry mouth", "fever", "blurred vision", "confusion", "hallucinations", "weakness"],
+     ["type 2 diabetes", "infection", "non-adherence to diabetes medication", "diuretics", "elderly"],
+     0.005),
+
+    ("Systemic Lupus Erythematosus",
+     ["butterfly-shaped rash", "joint pain", "fatigue", "fever", "fingers turning blue in cold", "shortness of breath", "chest pain", "dry eyes"],
+     ["female sex", "age 15-45", "family history of autoimmune disease", "sun exposure"],
+     0.01),
+
+    ("Multiple Myeloma",
+     ["bone pain", "frequent infections", "weakness in legs", "excessive thirst", "constipation", "confusion", "weight loss"],
+     ["elderly", "male sex", "family history of myeloma", "obesity", "exposure to radiation"],
+     0.007),
+
+    ("Sepsis",
+     ["high heart rate", "low blood pressure", "confusion", "shivering", "fever", "extreme pain", "shortness of breath", "clammy skin"],
+     ["recent surgery", "recent infection", "immunodeficiency", "elderly", "infant age", "chronic illness"],
+     0.02),
+
+    ("Congestive Heart Failure",
+     ["shortness of breath while lying down", "fatigue", "swelling in legs", "rapid heartbeat", "persistent cough", "abdominal swelling", "sudden weight gain"],
+     ["hypertension", "coronary artery disease", "diabetes", "obesity", "smoking", "sleep apnea"],
+     0.05),
+
+    ("Cushing's Syndrome",
+     ["weight gain in midsection", "buffalo hump", "moon face", "purple stretch marks", "thin skin", "slow healing", "acne", "muscle weakness"],
+     ["long-term corticosteroid use", "pituitary tumor", "adrenal tumor"],
+     0.001),
+
+    ("Endocarditis",
+     ["fever", "chills", "new heart murmur", "fatigue", "aching joints", "night sweats", "shortness of breath", "small red spots on skin"],
+     ["artificial heart valve", "damaged heart valves", "intravenous drug use", "dental procedures", "indwelling catheters"],
+     0.002),
+
+    ("Glaucoma",
+     ["gradual loss of peripheral vision", "tunnel vision", "severe eye pain", "nausea", "blurred vision", "halos around lights", "eye redness"],
+     ["elderly", "family history of glaucoma", "diabetes", "hypertension", "high intraocular pressure"],
+     0.04),
+
+    ("Chronic Venous Insufficiency",
+     ["leg heaviness", "varicose veins", "skin color changes near ankles", "leg ulcers", "swelling", "itching"],
+     ["obesity", "pregnancy", "female sex", "prolonged standing", "family history", "history of DVT"],
+     0.10),
+
+    ("Meniere's Disease",
+     ["vertigo", "tinnitus", "hearing loss", "feeling of fullness in the ear", "nausea", "vomiting"],
+     ["age 40-60", "family history", "autoimmune disorders", "allergies", "viral infections"],
+     0.003),
+
+    ("Sarcoidosis",
+     ["persistent dry cough", "shortness of breath", "fatigue", "swollen lymph nodes", "tender red bumps on shins", "blurred vision"],
+     ["young adulthood", "family history", "occupational exposure to dust/mold"],
+     0.002),
 ]
 
 

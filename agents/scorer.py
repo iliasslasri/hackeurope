@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 
 RNG        = np.random.default_rng(42)
 MC_SAMPLES = 5_000
-W_SYMPTOMS = 0.5
-W_RISK     = 0.5
-W_PRIOR    = 0
+W_SYMPTOMS = 0.65
+W_RISK     = 0.15
+W_PRIOR    = 0.20
 
 # ---------------------------------------------------------------------------
 # Text helpers (exported so other modules can import them)
@@ -163,7 +163,7 @@ class DiagnosisScorer:
             c.probability = c.probability_raw / total
             c.prob_ci_lo /= total; c.prob_ci_hi /= total; c.prob_std /= total
 
-        candidates.sort(key=lambda c: (-c.probability, -c.confidence))
+        candidates.sort(key=lambda c: (-c.confidence, -c.probability))
         return candidates[:top_k]
 
     @staticmethod
@@ -204,10 +204,10 @@ class DiagnosisScorer:
         rf_active_miss  = max(cand.risk_factor_observed - rf_active_match, 0)
 
         cand.confidence = beta_variance_confidence(
-            sym_alpha = s_active_match + 1.0,
-            sym_beta  = s_active_miss  + 1.0,
-            rf_alpha  = rf_active_match + 1.0,
-            rf_beta   = rf_active_miss  + 1.0,
+            sym_alpha = s_active_match + 2.0,
+            sym_beta  = s_active_miss  + 2.0,
+            rf_alpha  = rf_active_match + 2.0,
+            rf_beta   = rf_active_miss  + 2.0,
         )
 
 
@@ -263,7 +263,7 @@ def beta_variance_confidence(sym_alpha: float, sym_beta: float,
 
     var_combined = W_SYMPTOMS**2 * var_sym + W_RISK**2 * var_rf
 
-    # Massimo teorico: entrambi Beta(1,1) -> Var = 1/12
-    var_max = (W_SYMPTOMS**2 + W_RISK**2) / 12.0   # ≈ 0.03854
+    # Massimo teorico: entrambi Beta(2,2) -> Var = 1/20
+    var_max = (W_SYMPTOMS**2 + W_RISK**2) / 20.0
 
-    return float(1.0 - var_combined / var_max)
+    return float(max(0.0, 1.0 - var_combined / var_max))

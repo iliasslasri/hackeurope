@@ -21,7 +21,7 @@ _SUSPICION_RANK = {
     "Medium": 1,
     "Low":    0,
 }
-DDX_MAX = 7   # Maximum number of DDx entries to keep at any time
+DDX_MAX = 5   # Maximum number of DDx entries to keep at any time
 
 
 def _merge_ddx(
@@ -68,21 +68,21 @@ def _merge_ddx(
 
     result = list(merged.values())
 
-    # Enforce cap: drop oldest entry with lowest suspicion when over limit
+    # Enforce cap: drop oldest entry with lowest confidence when over limit
     while len(result) > max_entries:
-        # Sort ascending by suspicion rank so the weakest candidate is first;
+        # Sort ascending by confidence so the weakest candidate is first;
         # among ties, the one with the highest rank number (added earliest /
         # ranked lowest) is chosen for removal.
         result.sort(
             key=lambda e: (
-                _SUSPICION_RANK.get(e.suspicion.value, 0),
+                e.confidence,
                 -e.rank,
             )
         )
         result.pop(0)   # remove the lowest-confidence / oldest entry
 
-    # Re-number ranks 1..N sorted by suspicion descending
-    result.sort(key=lambda e: _SUSPICION_RANK.get(e.suspicion.value, 0), reverse=True)
+    # Re-number ranks 1..N sorted by confidence descending
+    result.sort(key=lambda e: e.confidence, reverse=True)
     for i, entry in enumerate(result, start=1):
         entry = entry.model_copy(update={"rank": i})
         result[i - 1] = entry
@@ -875,7 +875,7 @@ with col_right:
                     <span class="condition">{entry.disease}</span>
                     <span style="font-size:0.75rem; color:#64748b; font-weight:500;">Probability: {pct}</span>
                 </div>
-                <span class="ddx-badge {cls}">{entry.confidence:.1f}% Conf.</span>
+                <span class="ddx-badge {cls}">{entry.confidence:.1f}.</span>
             </div>"""
         st.markdown(html, unsafe_allow_html=True)
     else:

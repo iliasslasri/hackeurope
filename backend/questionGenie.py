@@ -165,7 +165,7 @@ async def _generate_for_disease(
 async def generate_questions_async(
     patient_history: dict[str, Any],
     candidate_diseases: list[str],
-    max_concurrent: int = 3,   # parallel LLM calls; increase if rate limits allow
+    max_concurrent: int = 5,   # parallel LLM calls; increase if rate limits allow
 ) -> dict[str, Any]:
     """
     Generate >=3 clinical questions for each candidate disease.
