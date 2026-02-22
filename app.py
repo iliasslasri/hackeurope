@@ -492,6 +492,7 @@ with col_left:
                     full_transcript = "".join(st.session_state.transcript)
                     
                     new_analysis = st.session_state.pipeline.run(full_transcript)
+                    print("new_analysis", new_analysis)
                     if new_analysis.updateUi:
                         st.session_state.ai_analysis = new_analysis
                     st.rerun()

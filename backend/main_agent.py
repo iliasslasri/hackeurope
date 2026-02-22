@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from backend.schemas import PatientHistory, AuraUIPayload
+from backend.schemas import PatientHistory, AuraUIPayload, DDxEntry, SuspicionLevel
 from backend.triageGenie import update_patient_async
 from backend.questionGenie import generate_questions_async
 
@@ -111,6 +111,22 @@ class AuraPipeline:
             top_k=self._top_k,
         )
 
+        ddx_entries = []
+        for i, c in enumerate(raw_candidates, start=1):
+            if c.probability_label in ["Very High", "High"]:
+                susp = SuspicionLevel.HIGH
+            elif c.probability_label == "Moderate":
+                susp = SuspicionLevel.MEDIUM
+            else:
+                susp = SuspicionLevel.LOW
+                
+            ddx_entries.append(DDxEntry(
+                rank=i,
+                disease=c.disease,
+                suspicion=susp,
+                key_supporting=[m[0] for m in c.top_matches]
+            ))
+
         # Extract plain disease names for the downstream questionGenie
         candidate_diseases: list[str] = [c.disease for c in raw_candidates]
 
@@ -118,6 +134,7 @@ class AuraPipeline:
             # Not enough symptom signal to rank — return partial payload
             return AuraUIPayload(
                 patient_history=self.patient_history,
+                ddx=ddx_entries,
                 updateUi=True,
             )
 
@@ -131,6 +148,7 @@ class AuraPipeline:
         return AuraUIPayload(
             transcript_chunk=full_transcript,
             patient_history=self.patient_history,
+            ddx=ddx_entries,
             questions_by_disease=questions_result.get("results", []),
             updateUi=True,
         )
