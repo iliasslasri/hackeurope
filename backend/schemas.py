@@ -101,7 +101,7 @@ class ClinicalQuestion(BaseModel):
     """One targeted question generated for a specific disease."""
 
     question: str
-    clinical_rationale: str
+    clinical_rationale: str = ""   # LLM sometimes omits this — default to empty string
     target: QuestionTarget
 
 
