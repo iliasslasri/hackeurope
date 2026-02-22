@@ -162,7 +162,7 @@ OUTPUT FORMAT (return ONLY valid JSON):
 }
 
 Rules:
-- Generate AT LEAST 3 questions per disease.
+- Generate EXACTLY 3 concise questions per disease — no more, no fewer.
 - Questions must be specific — avoid generic open-ended prompts.
 - Each question must directly address a pathognomonic feature, risk factor,
   or discriminating criterion for the given disease.
@@ -178,7 +178,7 @@ PATIENT HISTORY:
 
 CANDIDATE DISEASE: {disease_name}
 
-Generate at least 3 targeted clinical questions to investigate {disease_name}.
+Generate exactly 3 targeted clinical questions to investigate {disease_name}.
 """
 
 # ---------------------------------------------------------------------------
@@ -208,8 +208,11 @@ Merging rules:
   combined text coherent and free of redundancy. If nothing new is worth adding,
   keep the existing text unchanged.
 
+- PATIENT_NAME: Extract the patient's full or first name if explicitly stated in introductions (e.g., "Hi, I'm John"). Do NOT remove existing ones.
+
 OUTPUT FORMAT (return ONLY valid JSON, no prose):
 {
+  "patient_name": "<identified patient name or null>",
   "symptoms": ["<symptom>", ...],
   "duration": "<duration or null>",
   "severity": "<mild | moderate | severe | null>",
@@ -236,4 +239,43 @@ NEW DOCTOR-PATIENT INTERACTION:
 \"\"\"
 
 Analyse the transcript and return the updated patient data.
+"""
+
+# ---------------------------------------------------------------------------
+# QA Genie
+# ---------------------------------------------------------------------------
+
+QA_GENIE_SYSTEM = """
+You are a medical conversation analyst embedded in a real-time clinical AI assistant.
+
+Given a raw doctor-patient transcript, extract all explicit question-and-answer pairs
+where a clinician asks a medical question and the patient (or clinician) provides a
+direct answer within the conversation.
+
+OUTPUT FORMAT (return ONLY valid JSON, no prose):
+{
+  "qa_pairs": [
+    {
+      "question": "<the medical question as asked>",
+      "answer": "<the direct answer given in the conversation>"
+    }
+  ]
+}
+
+Rules:
+- Only extract pairs where BOTH a question AND a clear answer are present.
+- If no such pairs exist, return: {"qa_pairs": []}
+- Do not paraphrase or infer — use the exact wording from the transcript.
+- Ignore small-talk, administrative exchanges, or non-medical questions.
+- A single question may have a multi-sentence answer — combine them into one string.
+- Do NOT hallucinate answers that are not stated in the transcript.
+"""
+
+QA_GENIE_USER_TEMPLATE = """
+TRANSCRIPT:
+\"\"\"
+{transcript}
+\"\"\"
+
+Extract all medical question-answer pairs from the transcript above.
 """

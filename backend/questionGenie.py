@@ -78,6 +78,34 @@ def _build_user_prompt(patient_history: dict[str, Any], disease_name: str) -> st
     )
 
 
+_VALID_TARGETS = {"rule_in", "rule_out", "differentiate"}
+
+
+def _sanitise_questions(raw: list[dict]) -> list[dict]:
+    """
+    Drop any question dict that the LLM returned with garbled / non-English
+    field names (e.g. '家喻户晓' instead of 'question').
+
+    A valid question dict must have:
+      - 'question'  : non-empty string
+      - 'target'    : one of the accepted QuestionTarget values
+    Missing 'clinical_rationale' is tolerated (schema default = "").
+    """
+    clean = []
+    for item in raw:
+        q_text = item.get("question", "")
+        target  = item.get("target", "")
+        if isinstance(q_text, str) and q_text.strip() and target in _VALID_TARGETS:
+            clean.append({
+                "question":           q_text.strip(),
+                "clinical_rationale": item.get("clinical_rationale", ""),
+                "target":             target,
+            })
+        else:
+            logger.warning("Dropping malformed question from LLM output: %s", item)
+    return clean
+
+
 async def _generate_for_disease(
     patient_history: dict[str, Any],
     disease_name: str,
@@ -98,16 +126,18 @@ async def _generate_for_disease(
         raw_response = await call_llm(
             system_prompt=QUESTION_GENIE_SYSTEM,
             user_prompt=user_prompt,
-            temperature=0.3,         # slightly higher than safety-critical agents
-            max_tokens=1024,
+            temperature=0.3,
+            max_tokens=512,          # 3 questions fit easily in 512 tokens
             response_format="json_object",
         )
 
-        # Basic schema validation — ensure we got at least 3 questions
-        questions: list[dict] = raw_response.get("questions", [])
+        # Sanitise before any Pydantic validation — drop garbled LLM keys
+        questions: list[dict] = _sanitise_questions(
+            raw_response.get("questions", [])
+        )[:3]   # cap at 3 per disease
         if len(questions) < 3:
             logger.warning(
-                "LLM returned only %d question(s) for '%s' — expected ≥3.",
+                "LLM returned only %d valid question(s) for '%s' — expected ≥3.",
                 len(questions),
                 disease_name,
             )
@@ -135,20 +165,20 @@ async def _generate_for_disease(
 async def generate_questions_async(
     patient_history: dict[str, Any],
     candidate_diseases: list[str],
-    inter_call_delay: float = 1.0,   # seconds between LLM calls to stay within rate limits
+    max_concurrent: int = 3,   # parallel LLM calls; increase if rate limits allow
 ) -> dict[str, Any]:
     """
     Generate >=3 clinical questions for each candidate disease.
 
-    Calls are made *sequentially* with a small delay to avoid bursting
-    the Crusoe rate limit (429). Use inter_call_delay=0 if you have a
-    high-rate-limit API tier.
+    Calls are made **in parallel** (up to *max_concurrent* at once) using
+    asyncio.gather, which cuts wall-clock time from O(N) to O(1) relative
+    to the number of diseases.
 
     Parameters
     ----------
-    patient_history     : Structured patient data dict.
-    candidate_diseases  : List of disease names (strings).
-    inter_call_delay    : Seconds to wait between successive LLM calls.
+    patient_history  : Structured patient data dict.
+    candidate_diseases : List of disease names (strings).
+    max_concurrent   : Max simultaneous LLM calls (soft rate-limit guard).
 
     Returns
     -------
@@ -160,18 +190,20 @@ async def generate_questions_async(
             "results": [],
         }
 
-    results: list[dict[str, Any]] = []
-    for i, disease in enumerate(candidate_diseases):
-        result = await _generate_for_disease(patient_history, disease)
-        results.append(result)
-        # Polite inter-call pause to respect rate limits
-        if inter_call_delay > 0 and i < len(candidate_diseases) - 1:
-            logger.debug("Sleeping %.1fs before next LLM call ...", inter_call_delay)
-            await asyncio.sleep(inter_call_delay)
+    # Semaphore prevents bursting more than max_concurrent calls at once
+    sem = asyncio.Semaphore(max_concurrent)
+
+    async def _guarded(disease: str) -> dict[str, Any]:
+        async with sem:
+            return await _generate_for_disease(patient_history, disease)
+
+    results: list[dict[str, Any]] = await asyncio.gather(
+        *[_guarded(d) for d in candidate_diseases]
+    )
 
     return {
         "patient_history_snapshot": patient_history,
-        "results": results,
+        "results": list(results),
     }
 
 

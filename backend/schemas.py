@@ -41,6 +41,7 @@ class QuestionTarget(str, Enum):
 class PatientHistory(BaseModel):
     """Structured clinical data extracted from a transcript chunk."""
 
+    patient_name: Optional[str] = None
     symptoms: list[str] = Field(default_factory=list)
     duration: Optional[str] = None
     severity: Optional[str] = None

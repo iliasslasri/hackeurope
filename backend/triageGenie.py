@@ -111,6 +111,7 @@ def _merge_patient_data(original: PatientHistory, llm_output: dict[str, Any]) ->
         return original_val
 
     return PatientHistory(
+        patient_name=_prefer_non_null(original.patient_name, llm_output.get("patient_name")),
         symptoms=_merge_list(original.symptoms, llm_output.get("symptoms")),
         negated_symptoms=_merge_list(original.negated_symptoms, llm_output.get("negated_symptoms")),
         risk_factors=_merge_list(original.risk_factors, llm_output.get("risk_factors")),

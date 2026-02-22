@@ -1,0 +1,18 @@
+{
+    "id": "john_doe",
+    "name": "John Doe",
+    "age": 45,
+    "gender": "Male",
+    "allergies": [
+        "Penicillin",
+        "Peanuts"
+    ],
+    "past_medical_history": [
+        "Hypertension",
+        "Type 2 Diabetes"
+    ],
+    "current_medications": [
+        "Lisinopril 10mg",
+        "Metformin 500mg"
+    ]
+}

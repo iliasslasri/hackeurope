@@ -38,20 +38,18 @@ if "transcript" not in st.session_state:
 if "ai_analysis" not in st.session_state:
     st.session_state.ai_analysis = AuraUIPayload()
 if "pipeline" not in st.session_state:
-    st.session_state.pipeline = AuraPipeline()
-if "current_patient_id" not in st.session_state:
-    st.session_state.current_patient_id = "P001"
+    # Pass the seeded history into the pipeline so it doesn't start blank
+    st.session_state.pipeline = AuraPipeline(initial_history=st.session_state.patient_history)
 if "speaker_mode" not in st.session_state:
     st.session_state.speaker_mode = "Doctor"
 
 if "was_playing" not in st.session_state:
     st.session_state.was_playing = False
-if "last_speech_time" not in st.session_state:
-    st.session_state.last_speech_time = time.time()
+if "last_pipeline_run" not in st.session_state:
+    st.session_state.last_pipeline_run = 0.0
 if "transcript_changed_since_llm" not in st.session_state:
     st.session_state.transcript_changed_since_llm = False
 
-active_patient = data.get_patient_by_id(st.session_state.current_patient_id)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CSS — Pixel-perfect match to the React/Tailwind source
@@ -436,13 +434,22 @@ div[data-testid="stVerticalBlock"] > div[style*="border"] {
 # ══════════════════════════════════════════════════════════════════════════════
 #  HEADER
 # ══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<div class="aura-header" style="margin-bottom:2rem">
-    <h1>Aura</h1>
-    <div class="aura-subtitle">Real-time Clinical Decision Support</div>
-</div>
-""", unsafe_allow_html=True)
+header_col1, header_col2 = st.columns([3, 2], gap="large")
+with header_col1:
+    st.markdown("""
+    <div class="aura-header" style="margin-bottom:2rem">
+        <h1>Aura</h1>
+        <div class="aura-subtitle">Real-time Clinical Decision Support</div>
+    </div>
+    """, unsafe_allow_html=True)
 
+with header_col2:
+    if st.session_state.current_patient_id:
+        active_patient_opt = data.get_patient_by_id(st.session_state.current_patient_id)
+        p_name = active_patient_opt.get("name", "Unknown") if active_patient_opt else "Unknown"
+        st.markdown(f'<div style="text-align:right; color:#0f172a; font-weight:600; font-size:1.1rem; padding-top:1rem;">Patient: {p_name}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div style="text-align:right; color:#64748b; font-style:italic; padding-top:1rem;">Listening for patient name...</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MAIN LAYOUT — grid-cols-5: 3/5 left, 2/5 right, gap-8
@@ -544,38 +551,41 @@ with col_right:
 
     # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
     if payload.questions_by_disease:
-        st.markdown("""
-        <div class="clinical-gap-header">
-            <span>❓</span> Targeted Questions
-        </div>""", unsafe_allow_html=True)
+        TARGET_COLORS = {
+            "rule_in":      ("#dcfce7", "#166534", "#bbf7d0"),
+            "rule_out":     ("#fee2e2", "#991b1b", "#fecaca"),
+            "differentiate":("#dbeafe", "#1e40af", "#bfdbfe"),
+        }
+
+        # Build one HTML block — hover reveals questions (no click needed)
+        html = '<div class="clinical-gap-header"><span>❓</span> Targeted Questions</div>'
+        html += '<style>'
+        html += '.dq-card{position:relative;margin-bottom:0.5rem;border-radius:0.75rem;border:1px solid #e2e8f0;background:#fff;overflow:hidden;transition:box-shadow .2s;}'
+        html += '.dq-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1);}'
+        html += '.dq-header{display:flex;align-items:center;gap:0.5rem;padding:0.65rem 1rem;font-size:0.875rem;font-weight:600;color:#1e293b;cursor:default;}'
+        html += '.dq-questions{max-height:0;overflow:hidden;transition:max-height .35s ease,padding .2s;}'
+        html += '.dq-card:hover .dq-questions{max-height:600px;padding-bottom:0.75rem;}'
+        html += '.dq-q{margin:0 0.75rem 0.5rem;padding:0.65rem 0.9rem;border-radius:0.5rem;border:1px solid;}'
+        html += '.dq-q-text{font-weight:500;font-size:0.875rem;margin-bottom:0.2rem;}'
+        html += '.dq-q-rationale{font-size:0.78rem;color:#64748b;line-height:1.5;}'
+        html += '.dq-q-tag{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:0.3rem;display:inline-block;}'
+        html += '</style>'
 
         for dq in payload.questions_by_disease:
-            with st.expander(f"🔬 {dq.disease}", expanded=False):
-                for q in dq.questions:
-                    target_colors = {
-                        "rule_in": ("#dcfce7", "#166534", "#bbf7d0"),
-                        "rule_out": ("#fee2e2", "#991b1b", "#fecaca"),
-                        "differentiate": ("#dbeafe", "#1e40af", "#bfdbfe"),
-                    }
-                    bg, fg, border = target_colors.get(
-                        q.target.value, ("#f1f5f9", "#334155", "#e2e8f0"))
-                    st.markdown(f"""
-                    <div style="background:{bg}; border:1px solid {border};
-                                border-radius:0.5rem; padding:0.75rem 1rem;
-                                margin-bottom:0.5rem;">
-                        <div style="font-weight:500; color:{fg}; font-size:0.9rem;
-                                    margin-bottom:0.25rem;">
-                            {q.question}
-                        </div>
-                        <div style="font-size:0.8rem; color:#64748b; line-height:1.5;">
-                            {q.clinical_rationale}
-                        </div>
-                        <span style="font-size:0.7rem; font-weight:600;
-                                     color:{fg}; text-transform:uppercase;
-                                     letter-spacing:0.05em;">
-                            {q.target.value.replace('_', ' ')}
-                        </span>
-                    </div>""", unsafe_allow_html=True)
+            html += f'<div class="dq-card"><div class="dq-header">🔬 {dq.disease}</div><div class="dq-questions">'
+            for q in dq.questions:
+                bg, fg, border = TARGET_COLORS.get(q.target.value, ("#f1f5f9", "#334155", "#e2e8f0"))
+                label = q.target.value.replace("_", " ")
+                html += (
+                    f'<div class="dq-q" style="background:{bg};border-color:{border};">'
+                    f'<div class="dq-q-text" style="color:{fg};">{q.question}</div>'
+                    f'<div class="dq-q-rationale">{q.clinical_rationale}</div>'
+                    f'<span class="dq-q-tag" style="color:{fg};">{label}</span>'
+                    f'</div>'
+                )
+            html += '</div></div>'
+
+        st.markdown(html, unsafe_allow_html=True)
 if webrtc_ctx.state.playing:
     st.session_state.was_playing = True
     status_placeholder.info("Listening... (streaming to Gradium API)")
@@ -594,7 +604,6 @@ if webrtc_ctx.state.playing:
                 pass
                 
             if collected_text:
-                st.session_state.last_speech_time = time.time()
                 st.session_state.transcript_changed_since_llm = True
                 # Instantly update the UI placeholder without blocking the thread
                 render_transcript()
