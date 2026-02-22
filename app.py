@@ -696,7 +696,7 @@ with col_left:
     # Use the fresh state for rendering ALL UI dynamically
     is_recording = webrtc_ctx.state.playing
 
-    rec_label = "🔴 Recording…" if is_recording else "Press to start consultation"
+    rec_label = "🔴 Listening…" if is_recording else "Press to start consultation"
     rec_color = "#ef4444" if is_recording else "#94a3b8"
     st.markdown(
         f'<div style="text-align:center;font-size:0.82rem;font-weight:500;color:{rec_color};margin-top:1.5rem;">'
@@ -861,9 +861,13 @@ with col_right:
     st.markdown('<div class="section-title">Differential Diagnosis (DDx)</div>',
                 unsafe_allow_html=True)
 
-    if payload.ddx:
+    visible_ddx = sorted(
+        [e for e in payload.ddx if e.confidence >= 1.0],
+        key=lambda e: e.confidence, reverse=True
+    )[:3]
+    if visible_ddx:
         html = ""
-        for entry in payload.ddx:
+        for entry in visible_ddx:
             sev = entry.suspicion.value.lower()   # "high" / "medium" / "low"
             cls = sev if sev in ("high", "medium", "low") else "low"
             pct = f"{entry.probability_pct:.1f}%"
@@ -871,9 +875,9 @@ with col_right:
             <div class="ddx-card {cls}">
                 <div style="display:flex; flex-direction:column; gap:0.25rem;">
                     <span class="condition">{entry.disease}</span>
-                    <span class="ddx-prob">📊 {pct} probability</span>
+                    <span class="ddx-prob">{pct}</span>
                 </div>
-                <span class="ddx-badge {cls}">{entry.confidence:.1f}.</span>
+                <span class="ddx-badge {cls}">{entry.confidence:.1f}</span>
             </div>"""
         st.markdown(html, unsafe_allow_html=True)
     else:
@@ -1008,7 +1012,7 @@ if webrtc_ctx.state.playing:
             # Run the pipeline every 5 s if the transcript has new content
             if (
                 st.session_state.transcript_changed_since_llm
-                and time.time() - st.session_state.last_pipeline_run >= 5.0
+                and time.time() - st.session_state.last_pipeline_run >= 10.0
             ):
                 st.session_state.transcript_changed_since_llm = False
                 st.session_state.last_pipeline_run = time.time()
@@ -1027,10 +1031,17 @@ if webrtc_ctx.state.playing:
                     extracted_name = new_ph.patient_name.lower().strip()
                     all_patients = data.get_all_patients()
                     matched_id = None
+                    print(f"[PatientMatch] Extracted name: '{extracted_name}'")
                     for p in all_patients:
                         db_name = p.get("name", "").lower()
-                        if extracted_name in db_name or db_name in extracted_name:
+                        db_first = db_name.split()[0] if db_name else ""
+                        extracted_first = extracted_name.split()[0] if extracted_name else ""
+                        print(f"[PatientMatch]   Checking against: '{db_name}' (id={p.get('id')})")
+                        if (extracted_name in db_name
+                            or db_name in extracted_name
+                            or extracted_first == db_first):
                             matched_id = p.get("id")
+                            print(f"[PatientMatch]   ✅ MATCHED → id='{matched_id}'")
                             break
                     
                     if matched_id:

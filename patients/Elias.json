@@ -1,0 +1,36 @@
+{
+    "id": "elias",
+    "name": "elias",
+    "age": 28,
+    "gender": "Male",
+    "allergies": [
+        "Aspirin",
+        "Shellfish"
+    ],
+    "past_medical_history": [
+        "Childhood asthma (resolved)",
+        "Seasonal allergies",
+        "Ankle fractur (2023, fully healed)"
+    ],
+    "past_visits": [
+        {
+            "date": "2025-11-10",
+            "chief_complaint": "Persistent cough, mild wheezing",
+            "diagnosis": "Exercise-induced bronchospasm",
+            "treatment": "Salbutamol inhaler PRN before exercise",
+            "notes": "Advised to warm up gradually. Follow-up if symptoms worsen."
+        },
+        {
+            "date": "2026-01-15",
+            "chief_complaint": "Sore throat, low-grade fever, fatigue",
+            "diagnosis": "Viral pharyngitis",
+            "treatment": "Supportive care, rest, fluids. Paracetamol 500mg PRN.",
+            "notes": "Rapid strep test negative. Symptoms expected to resolve in 5-7 days."
+        }
+    ],
+    "current_medications": [
+        "Salbutamol inhaler (PRN, exercise-related)",
+        "Cetirizine 10mg (seasonal allergies)",
+        "Vitamin D 1000 IU daily"
+    ]
+}

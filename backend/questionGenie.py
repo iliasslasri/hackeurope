@@ -132,7 +132,7 @@ async def _generate_for_disease(
         )
 
         # Sanitise before any Pydantic validation — drop garbled LLM keys
-        questions: list[dict] = _saniltise_questions(
+        questions: list[dict] = _sanitise_questions(
             raw_response.get("questions", [])
         )[:3]   # cap at 3 per disease
         if len(questions) < 3:
