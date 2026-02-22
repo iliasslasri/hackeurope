@@ -240,7 +240,7 @@ class SequentialUpdater:
            weren't explicit targets, at 0.6× discount weight.
 
         Fallback: if SemanticIndex is unavailable, falls back to
-        question.target_symptoms (back-compat with old Question objects).
+        question.target_symptom (back-compat with old Question objects).
         """
         self._turn += 1
         parsed = self._parser.parse(raw_answer)
@@ -253,9 +253,9 @@ class SequentialUpdater:
             ml_targets = self._sem.extract_symptoms_from_question(
                 question.prompt, k=6, threshold=0.45)
 
-        # Fallback: use Question's pre-set targets if ML found nothing
-        if not ml_targets and question.target_symptoms:
-            ml_targets = [(_normalise(s), 1.0) for s in question.target_symptoms]
+        # Fallback: use Question's pre-set target if ML found nothing
+        if not ml_targets and question.target_symptom:
+            ml_targets = [(_normalise(question.target_symptom), 1.0)]
 
         # ── Step 2: polarity map from the full answer ───────────────────
         mentions_map: dict = {
@@ -432,7 +432,7 @@ class SequentialUpdater:
         targets = self.extract_targets_from_question(question_text)
         q = Question(
             prompt          = question_text,
-            target_symptoms = targets,
+            target_symptom  = targets[0] if targets else None,
             question_type   = "doctor_freetext",
         )
         return self.apply_answer(q, raw_answer)

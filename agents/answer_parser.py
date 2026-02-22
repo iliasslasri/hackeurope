@@ -380,6 +380,57 @@ class FreeTextAnswerParser:
 
     # ------------------------------------------------------------------
 
+    def extract_all_mentions(
+        self, norm_text: str
+    ) -> List[tuple[str, str, float]]:
+        """
+        Scan normalised answer text for ALL known symptom/RF mentions.
+
+        Returns a list of (symptom_phrase, polarity, effective_strength)
+        tuples — one per detected symptom.  The polarity and strength
+        are derived from the surrounding text context using the same
+        parse() pipeline.
+        """
+        parsed = self.parse(norm_text)
+        pol = parsed.answer_type
+        eff = parsed.effective_strength
+
+        tokens = _tokenise(norm_text)
+        found: List[tuple[str, str, float]] = []
+        seen: set = set()
+
+        for sym in self._known:
+            if sym in seen:
+                continue
+            sym_words = set(sym.split())
+            matched = False
+
+            # Exact token match
+            if sym in tokens:
+                matched = True
+            # Fuzzy: all words of multi-word symptom appear in text
+            elif len(sym_words) >= 2 and sym_words.issubset(tokens):
+                matched = True
+
+            if matched:
+                seen.add(sym)
+                # Check if this specific symptom is negated in context
+                local_pol = pol
+                local_eff = eff
+                # Simple negation check: "no <symptom>" or "denies <symptom>"
+                neg_pattern = re.compile(
+                    r'\b(no|not|denies?|without|absent|negative)\b.{0,15}'
+                    + re.escape(sym), re.I
+                )
+                if neg_pattern.search(norm_text):
+                    local_pol = "no"
+                    local_eff = 1.0
+                found.append((sym, local_pol, local_eff))
+
+        return found
+
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _explain(polarity, strength, temporal, severity,
                  intermittent, extra, notes) -> str:

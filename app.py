@@ -21,7 +21,7 @@ _SUSPICION_RANK = {
     "Medium": 1,
     "Low":    0,
 }
-DDX_MAX = 7   # Maximum number of DDx entries to keep at any time
+DDX_MAX = 5   # Maximum number of DDx entries to keep at any time
 
 
 def _merge_ddx(
@@ -68,21 +68,21 @@ def _merge_ddx(
 
     result = list(merged.values())
 
-    # Enforce cap: drop oldest entry with lowest suspicion when over limit
+    # Enforce cap: drop oldest entry with lowest confidence when over limit
     while len(result) > max_entries:
-        # Sort ascending by suspicion rank so the weakest candidate is first;
+        # Sort ascending by confidence so the weakest candidate is first;
         # among ties, the one with the highest rank number (added earliest /
         # ranked lowest) is chosen for removal.
         result.sort(
             key=lambda e: (
-                _SUSPICION_RANK.get(e.suspicion.value, 0),
+                e.confidence,
                 -e.rank,
             )
         )
         result.pop(0)   # remove the lowest-confidence / oldest entry
 
-    # Re-number ranks 1..N sorted by suspicion descending
-    result.sort(key=lambda e: _SUSPICION_RANK.get(e.suspicion.value, 0), reverse=True)
+    # Re-number ranks 1..N sorted by confidence descending
+    result.sort(key=lambda e: e.confidence, reverse=True)
     for i, entry in enumerate(result, start=1):
         entry = entry.model_copy(update={"rank": i})
         result[i - 1] = entry
@@ -127,6 +127,16 @@ if "patient_history" not in st.session_state:
         ph.relevant_history = f"**{active_patient.get('name', 'Unknown')}** ({active_patient.get('age', 'N/A')} {active_patient.get('gender', 'N/A')}). "
         if active_patient.get("allergies") and active_patient["allergies"] != ["None"]:
             ph.relevant_history += f"Allergies: {', '.join(active_patient['allergies'])}. "
+        past_visits = active_patient.get("past_visits", [])
+        if past_visits:
+            ph.relevant_history += "Previous visits: "
+            for visit in past_visits:
+                ph.relevant_history += (
+                    f"[{visit.get('date', 'N/A')}] "
+                    f"{visit.get('chief_complaint', '')} → "
+                    f"Dx: {visit.get('diagnosis', '')}. "
+                    f"Tx: {visit.get('treatment', '')}. "
+                )
     st.session_state.patient_history = ph
 
 if "pipeline" not in st.session_state:
@@ -156,8 +166,8 @@ html, body, * , [class*="css"] {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
-/* bg-slate-50 */
-.stApp { background-color: #f8fafc; }
+/* Clinical light-blue background */
+.stApp { background: linear-gradient(155deg, #f0f9ff 0%, #e0f2fe 45%, #f8fafc 100%) !important; min-height: 100vh; }
 
 /* ── Hide Streamlit chrome ─────────────────────────────────────────────────── */
 [data-testid="stSidebar"]      { display: none !important; }
@@ -166,196 +176,125 @@ html, body, * , [class*="css"] {
 [data-testid="stIconMaterial"] { display: none !important; }
 .stMarkdown h3                 { display: none; }
 
-/* max-w-7xl mx-auto, p-4 md:p-8 */
+/* max-w-7xl mx-auto */
 .block-container {
-    padding: 2rem 2rem !important;
+    padding: 2rem 2.5rem !important;
     max-width: 1280px;
 }
 
 /* ── Header ────────────────────────────────────────────────────────────────── */
-/* text-3xl font-bold text-slate-800 tracking-tight */
 .aura-header h1 {
-    font-size: 1.875rem;
-    font-weight: 700;
-    color: #1e293b;
-    letter-spacing: -0.025em;
+    font-size: 2rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #0369a1 0%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.04em;
     margin: 0; padding: 0; line-height: 1.2;
 }
-/* text-slate-500 */
 .aura-subtitle {
-    color: #64748b;
-    font-size: 1rem;
-    font-weight: 400;
-    margin-top: 4px;
+    color: #7dd3fc;
+    font-size: 0.72rem;
+    font-weight: 600;
+    margin-top: 5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
 }
 
 /* ── Section Titles ────────────────────────────────────────────────────────── */
-/* text-xl font-semibold text-slate-800 */
 .section-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #1e293b;
-    margin-bottom: 1rem;
-}
-
-/* ── Transcript Container ──────────────────────────────────────────────────── */
-/* bg-white border border-slate-200 rounded-xl p-6 shadow-sm */
-.transcript-panel {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.75rem;
-    padding: 1.5rem;
-    min-height: 380px;
-    max-height: 420px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
-}
-
-
-/* ── Chat Messages ─────────────────────────────────────────────────────────── */
-/* flex gap-4 */
-.msg-row {
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-}
-/* flex-row-reverse for doctor (user) */
-.msg-row.doctor { flex-direction: row-reverse; }
-/* flex-row for patient (assistant) */
-.msg-row.patient { flex-direction: row; }
-
-/* Avatar: w-10 h-10 rounded-full flex items-center justify-center */
-.avatar-icon {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 9999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #0369a1;
+    margin-bottom: 0.85rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
     display: flex;
     align-items: center;
-    justify-content: center;
+    gap: 0.45rem;
+}
+.section-title::before {
+    content: \'\';
+    display: inline-block;
+    width: 3px; height: 14px;
+    background: linear-gradient(180deg, #38bdf8, #0369a1);
+    border-radius: 2px;
     flex-shrink: 0;
-    font-size: 1rem;
-}
-/* bg-indigo-100 text-indigo-600 */
-.avatar-icon.doctor {
-    background: #e0e7ff;
-    color: #4f46e5;
-}
-/* bg-emerald-100 text-emerald-600 */
-.avatar-icon.patient {
-    background: #d1fae5;
-    color: #059669;
 }
 
-/* Bubble: max-w-[80%] rounded-2xl px-5 py-3 */
-.msg-bubble {
-    max-width: 80%;
-    border-radius: 1rem;
-    padding: 0.75rem 1.25rem;
-    font-size: 0.9375rem;
-    line-height: 1.625;
-    word-wrap: break-word;
-}
-/* bg-indigo-600 text-white rounded-tr-none */
-.msg-bubble.doctor {
-    background: #4f46e5;
-    color: #ffffff;
-    border-top-right-radius: 0;
-}
-/* bg-slate-100 text-slate-800 rounded-tl-none */
-.msg-bubble.patient {
-    background: #f1f5f9;
-    color: #1e293b;
-    border-top-left-radius: 0;
-}
-
-/* Empty state */
-.empty-state {
-    text-align: center;
-    padding: 5rem 1.5rem;
-    color: #94a3b8;
-    font-size: 0.9rem;
-    line-height: 1.6;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-}
-.empty-state .icon { font-size: 2rem; margin-bottom: 0.75rem; }
-
-/* ── Patient History Panel ─────────────────────────────────────────────────── */
+/* ── Patient History Panel (frosted glass) ─────────────────────────────────── */
 .ph-panel {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.75rem;
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(186,230,253,0.8);
+    border-radius: 1.1rem;
     padding: 1.5rem;
     min-height: 380px;
     overflow-y: auto;
-    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+    box-shadow: 0 1px 3px rgba(14,165,233,0.07), 0 8px 24px rgba(14,165,233,0.06);
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
 }
+
 /* section label */
 .ph-label {
-    font-size: 0.7rem;
+    font-size: 0.64rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #94a3b8;
-    margin-bottom: 0.5rem;
+    color: #38bdf8;
+    margin-bottom: 0.4rem;
 }
+
 /* symptom / risk chips */
 .ph-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .ph-chip {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.25rem 0.65rem;
+    padding: 0.2rem 0.7rem;
     border-radius: 9999px;
-    font-size: 0.8rem;
+    font-size: 0.77rem;
     font-weight: 500;
     border: 1px solid;
     line-height: 1.4;
 }
-.ph-chip.symptom   { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
-.ph-chip.negated   { background:#f8fafc; color:#94a3b8; border-color:#e2e8f0;
-                     text-decoration: line-through; }
-.ph-chip.risk      { background:#fff7ed; color:#c2410c; border-color:#fed7aa; }
-.ph-chip.med       { background:#f0fdf4; color:#166534; border-color:#bbf7d0; }
+.ph-chip.symptom   { background: #e0f2fe; color: #0369a1; border-color: #7dd3fc; }
+.ph-chip.negated   { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; text-decoration: line-through; }
+.ph-chip.risk      { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+.ph-chip.med       { background: #f0fdf4; color: #166534; border-color: #86efac; }
+
 /* meta row (duration / severity) */
-.ph-meta-row {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
+.ph-meta-row { display: flex; gap: 1rem; flex-wrap: wrap; }
 .ph-meta-pill {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
     border-radius: 0.5rem;
-    padding: 0.35rem 0.8rem;
-    font-size: 0.82rem;
-    color: #475569;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.8rem;
+    color: #0369a1;
     font-weight: 500;
 }
-.ph-meta-pill strong { color: #1e293b; }
+.ph-meta-pill strong { color: #0c4a6e; }
+
 /* history prose box */
 .ph-history-box {
-    background: #f8fafc;
-    border-left: 3px solid #6366f1;
+    background: #f0f9ff;
+    border-left: 3px solid #0ea5e9;
     border-radius: 0 0.5rem 0.5rem 0;
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
-    color: #334155;
+    color: #0c4a6e;
     line-height: 1.65;
     font-style: italic;
 }
+
 /* listening pulse dot */
 @keyframes ph-pulse {
     0%, 100% { opacity: 1; }
@@ -370,42 +309,54 @@ html, body, * , [class*="css"] {
     vertical-align: middle;
 }
 
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 5rem 1.5rem;
+    color: #7dd3fc;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.empty-state .icon { font-size: 2.2rem; margin-bottom: 0.75rem; }
+
 /* ── Form Input ────────────────────────────────────────────────────────────── */
-/* bg-slate-50 border border-slate-200 rounded-lg pl-4 pr-12 py-3 */
 .stTextInput > div > div > input {
-    background: #f8fafc !important;
-    border: 1px solid #e2e8f0 !important;
+    background: rgba(255,255,255,0.92) !important;
+    border: 1px solid #bae6fd !important;
     border-radius: 0.5rem !important;
     padding: 0.75rem 1rem !important;
     font-size: 0.9375rem !important;
     box-shadow: none !important;
-    color: #0f172a !important;
+    color: #0c4a6e !important;
     transition: all 0.15s ease !important;
 }
-/* focus:ring-2 focus:ring-indigo-500 focus:border-transparent */
 .stTextInput > div > div > input:focus {
     border-color: transparent !important;
-    box-shadow: 0 0 0 2px #6366f1 !important;
+    box-shadow: 0 0 0 2px #0ea5e9 !important;
     outline: none !important;
 }
 .stTextInput > div > div,
 .stTextInput > div { border: none !important; box-shadow: none !important; }
 
-/* text-indigo-600 */
+/* Form submit button */
 .stFormSubmitButton > button {
     background: none !important;
     border: none !important;
     box-shadow: none !important;
-    color: #4f46e5 !important;
+    color: #0ea5e9 !important;
     font-size: 1.2rem !important;
     padding: 0.5rem !important;
     min-height: 0 !important;
     transition: all 0.15s ease !important;
 }
-/* hover:bg-indigo-50 */
 .stFormSubmitButton > button:hover {
-    background: #eef2ff !important;
-    color: #4f46e5 !important;
+    background: #e0f2fe !important;
+    color: #0369a1 !important;
     transform: none !important;
     box-shadow: none !important;
     border-radius: 0.375rem !important;
@@ -413,127 +364,113 @@ html, body, * , [class*="css"] {
 
 /* General button */
 .stButton > button {
-    background: #4f46e5; color: white;
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    color: white;
     border: none; border-radius: 0.5rem;
-    padding: 0.5rem 1rem; font-weight: 500; font-size: 0.85rem;
-    transition: all 0.15s ease;
+    padding: 0.5rem 1.25rem; font-weight: 600; font-size: 0.85rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(14,165,233,0.3);
+    letter-spacing: 0.02em;
 }
 .stButton > button:hover {
-    background: #4338ca;
-    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(14,165,233,0.4);
     color: white; border: none;
 }
 
 /* ── DDx Cards ─────────────────────────────────────────────────────────────── */
-/* p-4 rounded-xl border transition-all cursor-pointer */
 .ddx-card {
-    padding: 1rem;
+    padding: 0.85rem 1rem 0.85rem 1.15rem;
     border-radius: 0.75rem;
     border-width: 1px;
     border-style: solid;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.6rem;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     transition: all 0.2s ease;
-    cursor: pointer;
+    cursor: default;
+    position: relative;
+    overflow: hidden;
 }
-/* hover:shadow-md hover:-translate-y-0.5 hover:border-slate-300 */
+.ddx-card::before {
+    content: \'\';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+}
 .ddx-card:hover {
-    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
-    transform: translateY(-2px);
-    border-color: #cbd5e1;
+    transform: translateX(3px);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.07);
 }
 
-/* High: bg-red-50 border-red-200 */
-.ddx-card.high {
-    background: #fef2f2;
-    border-color: #fecaca;
-}
-/* Medium: bg-amber-50 border-amber-200 */
-.ddx-card.medium {
-    background: #fffbeb;
-    border-color: #fde68a;
-}
-/* Low: bg-blue-50 border-blue-200 */
-.ddx-card.low {
-    background: #eff6ff;
-    border-color: #bfdbfe;
-}
+/* HIGH — rose/red */
+.ddx-card.high { background: rgba(255,241,242,0.9); border-color: #fecdd3; }
+.ddx-card.high::before { background: linear-gradient(180deg,#f43f5e,#be123c); }
 
-/* font-medium + text color per severity */
-.ddx-card .condition {
-    font-weight: 500;
-    font-size: 0.9375rem;
-}
-.ddx-card.high .condition  { color: #7f1d1d; }  /* text-red-900 */
-.ddx-card.medium .condition { color: #78350f; } /* text-amber-900 */
-.ddx-card.low .condition   { color: #1e3a5f; }  /* text-blue-900 */
+/* MEDIUM — amber */
+.ddx-card.medium { background: rgba(255,251,235,0.9); border-color: #fde68a; }
+.ddx-card.medium::before { background: linear-gradient(180deg,#f59e0b,#d97706); }
 
-/* Badge: text-xs font-semibold px-2.5 py-1 rounded-full border */
+/* LOW — sky blue */
+.ddx-card.low { background: rgba(240,249,255,0.9); border-color: #bae6fd; }
+.ddx-card.low::before { background: linear-gradient(180deg,#38bdf8,#0284c7); }
+
+/* Condition name */
+.ddx-card .condition { font-weight: 600; font-size: 0.9rem; }
+.ddx-card.high .condition   { color: #881337; }
+.ddx-card.medium .condition { color: #78350f; }
+.ddx-card.low .condition    { color: #0c4a6e; }
+
+/* Badge */
 .ddx-badge {
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.25rem 0.625rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.18rem 0.55rem;
     border-radius: 9999px;
     border-width: 1px;
     border-style: solid;
     white-space: nowrap;
+    letter-spacing: 0.03em;
 }
-/* High badge: bg-red-100 text-red-700 border-red-200 */
-.ddx-badge.high {
-    background: #fee2e2;
-    color: #b91c1c;
-    border-color: #fecaca;
-}
-/* Medium badge: bg-amber-100 text-amber-700 border-amber-200 */
-.ddx-badge.medium {
-    background: #fef3c7;
-    color: #b45309;
-    border-color: #fde68a;
-}
-/* Low badge: bg-blue-100 text-blue-700 border-blue-200 */
-.ddx-badge.low {
-    background: #dbeafe;
-    color: #1d4ed8;
-    border-color: #bfdbfe;
-}
+.ddx-badge.high   { background: #ffe4e6; color: #be123c; border-color: #fecdd3; }
+.ddx-badge.medium { background: #fef3c7; color: #b45309; border-color: #fde68a; }
+.ddx-badge.low    { background: #e0f2fe; color: #0369a1; border-color: #7dd3fc; }
 
 /* ── Clinical Gap ──────────────────────────────────────────────────────────── */
-/* text-xl font-semibold text-slate-800 flex items-center gap-2 */
 .clinical-gap-header {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #1e293b;
-    margin-top: 2rem;
-    margin-bottom: 1rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #0369a1;
+    margin-top: 1.75rem;
+    margin-bottom: 0.7rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
 }
-/* bg-emerald-50 border border-emerald-200 rounded-xl p-5 shadow-sm */
 .clinical-gap-card {
-    background: #ecfdf5;
-    border: 1px solid #a7f3d0;
-    border-radius: 0.75rem;
-    padding: 1.25rem;
-    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border: 1px solid #7dd3fc;
+    border-radius: 0.8rem;
+    padding: 1rem 1.25rem;
+    box-shadow: 0 2px 10px rgba(14,165,233,0.1);
 }
-/* text-emerald-900 font-medium leading-relaxed */
 .clinical-gap-card p,
 .clinical-gap-card {
-    color: #064e3b;
+    color: #0c4a6e;
     font-weight: 500;
-    line-height: 1.625;
-    font-size: 0.9375rem;
+    line-height: 1.65;
+    font-size: 0.9rem;
 }
 
 /* ── Mic Button ────────────────────────────────────────────────────────────── */
 .mic-btn {
     width: 2.75rem; height: 2.75rem;
     border-radius: 9999px;
-    border: 2px solid #e2e8f0;
-    background: #ffffff;
+    border: 2px solid #bae6fd;
+    background: #f0f9ff;
     cursor: pointer;
     display: flex; align-items: center; justify-content: center;
     transition: all 0.2s ease;
@@ -541,9 +478,9 @@ html, body, * , [class*="css"] {
     flex-shrink: 0;
 }
 .mic-btn:hover {
-    border-color: #4f46e5;
-    background: #eef2ff;
-    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+    border-color: #0ea5e9;
+    background: #e0f2fe;
+    box-shadow: 0 0 0 3px rgba(14,165,233,0.15);
 }
 .mic-btn.recording {
     border-color: #ef4444;
@@ -554,31 +491,92 @@ html, body, * , [class*="css"] {
     0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
     50%      { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
 }
-.mic-status {
-    font-size: 0.75rem;
-    color: #ef4444;
-    font-weight: 500;
-    margin-top: 2px;
-    text-align: center;
-}
+.mic-status { font-size: 0.75rem; color: #ef4444; font-weight: 500; margin-top: 2px; text-align: center; }
 
 /* ── Tabs (hide) ───────────────────────────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] { display: none; }
 .stTabs [data-baseweb="tab-panel"] { padding-top: 0; }
 
 /* ── Misc Streamlit overrides ──────────────────────────────────────────────── */
-.stAlert {
-    border-radius: 0.75rem;
-    border: none;
-}
+.stAlert { border-radius: 0.75rem; border: none; }
 div[data-testid="stVerticalBlock"] > div[style*="border"] {
-    background: white;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 0.75rem !important;
-    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+    background: rgba(255,255,255,0.82);
+    border: 1px solid #bae6fd !important;
+    border-radius: 1rem !important;
+    box-shadow: 0 1px 3px rgba(14,165,233,0.08);
 }
 </style>
 """, unsafe_allow_html=True)
+
+
+
+
+
+# Splash: entirely JS-driven so Streamlit reruns never re-inject the element
+st_html("""
+<script>
+(function() {
+    var ss = window.parent.sessionStorage;
+    if (ss && ss.getItem('aura_splash_done')) return;
+
+    var doc = window.parent.document;
+
+    // Inject CSS
+    var style = doc.createElement('style');
+    style.textContent = [
+        '#aura-splash{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;',
+        'background:linear-gradient(155deg,#f0f9ff 0%,#cae8fb 45%,#e0f2fe 100%);',
+        'opacity:1;transition:opacity 0.7s ease;pointer-events:all;}',
+        '.splash-bg{position:absolute;inset:0;background:',
+        'radial-gradient(ellipse 60% 40% at 20% 30%,rgba(14,165,233,.13) 0%,transparent 70%),',
+        'radial-gradient(ellipse 50% 50% at 80% 70%,rgba(56,189,248,.10) 0%,transparent 70%);',
+        'animation:blob-drift 6s ease-in-out infinite alternate;}',
+        '@keyframes blob-drift{from{transform:scale(1) translateY(0)}to{transform:scale(1.05) translateY(-10px)}}',
+        '.splash-content{position:relative;display:flex;flex-direction:column;align-items:center;gap:.6rem;',
+        'animation:splash-rise 0.9s cubic-bezier(0.16,1,0.3,1) 0.1s both;}',
+        '@keyframes splash-rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}',
+        '.splash-logo{font-family:Inter,sans-serif;font-size:clamp(4.5rem,12vw,8rem);font-weight:800;',
+        'letter-spacing:-0.04em;line-height:1;',
+        'background:linear-gradient(135deg,#0369a1 0%,#0ea5e9 50%,#38bdf8 100%);',
+        '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;',
+        'animation:logo-breathe 2s ease-in-out .1s infinite alternate;user-select:none;}',
+        '@keyframes logo-breathe{from{opacity:.88;transform:scale(1)}to{opacity:1;transform:scale(1.025)}}',
+        '.splash-sub{font-family:Inter,sans-serif;font-size:clamp(.75rem,2vw,.95rem);font-weight:600;',
+        'letter-spacing:.22em;text-transform:uppercase;color:#0369a1;opacity:0;',
+        'animation:sub-fadein .7s ease .8s forwards;user-select:none;}',
+        '@keyframes sub-fadein{to{opacity:.75}}',
+        '.splash-bar{width:120px;height:2px;background:rgba(14,165,233,.18);border-radius:9999px;',
+        'overflow:hidden;margin-top:2rem;opacity:0;animation:sub-fadein .5s ease 1.1s forwards;}',
+        '.splash-bar-inner{height:100%;width:0%;background:linear-gradient(90deg,#0ea5e9,#38bdf8);',
+        'border-radius:9999px;animation:bar-fill 2s cubic-bezier(.4,0,.2,1) 1.15s forwards;}',
+        '@keyframes bar-fill{from{width:0%}to{width:100%}}'
+    ].join('');
+    doc.head.appendChild(style);
+
+    // Build DOM
+    var el = doc.createElement('div');
+    el.id = 'aura-splash';
+    el.innerHTML = [
+        '<div class="splash-bg"></div>',
+        '<div class="splash-content">',
+        '  <div class="splash-logo">Aura</div>',
+        '  <div class="splash-sub">Think Faster. Diagnose Better.</div>',
+        '  <div class="splash-bar"><div class="splash-bar-inner"></div></div>',
+        '</div>'
+    ].join('');
+    doc.body.appendChild(el);
+
+    // Fade out then remove
+    setTimeout(function() {
+        el.style.opacity = '0';
+        setTimeout(function() {
+            if (el.parentNode) el.parentNode.removeChild(el);
+            if (ss) ss.setItem('aura_splash_done', '1');
+        }, 750);
+    }, 3100);
+})();
+</script>
+""", height=0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -589,7 +587,7 @@ with header_col1:
     st.markdown("""
     <div class="aura-header" style="margin-bottom:2rem">
         <h1>Aura</h1>
-        <div class="aura-subtitle">Real-time Clinical Decision Support</div>
+        <div class="aura-subtitle">Think Faster. Diagnose Better.</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -597,9 +595,9 @@ with header_col2:
     if st.session_state.current_patient_id:
         active_patient_opt = data.get_patient_by_id(st.session_state.current_patient_id)
         p_name = active_patient_opt.get("name", "Unknown") if active_patient_opt else "Unknown"
-        st.markdown(f'<div style="text-align:right; color:#0f172a; font-weight:600; font-size:1.1rem; padding-top:1rem;">Patient: {p_name}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align:right; color:#0369a1; font-weight:700; font-size:0.95rem; padding-top:1rem; background:rgba(224,242,254,0.6); border:1px solid #bae6fd; border-radius:0.6rem; padding:0.5rem 0.9rem; display:inline-block; backdrop-filter:blur(8px);">🩺 {p_name}</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div style="text-align:right; color:#64748b; font-style:italic; padding-top:1rem;">Listening for patient name...</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align:right; color:#7dd3fc; font-style:italic; font-size:0.82rem; padding-top:1rem; letter-spacing:0.04em;">⟳ Listening for patient name…</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  MAIN LAYOUT — grid-cols-5: 3/5 left, 2/5 right, gap-8
@@ -873,9 +871,9 @@ with col_right:
             <div class="ddx-card {cls}">
                 <div style="display:flex; flex-direction:column; gap:0.25rem;">
                     <span class="condition">{entry.disease}</span>
-                    <span style="font-size:0.75rem; color:#64748b; font-weight:500;">Probability: {pct}</span>
+                    <span class="ddx-prob">📊 {pct} probability</span>
                 </div>
-                <span class="ddx-badge {cls}">{entry.confidence:.1f}% Conf.</span>
+                <span class="ddx-badge {cls}">{entry.confidence:.1f}.</span>
             </div>"""
         st.markdown(html, unsafe_allow_html=True)
     else:
@@ -916,23 +914,24 @@ with col_right:
     # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
     if payload.questions_by_disease:
         TARGET_COLORS = {
-            "rule_in":      ("#dcfce7", "#166534", "#bbf7d0"),
-            "rule_out":     ("#fee2e2", "#991b1b", "#fecaca"),
-            "differentiate":("#dbeafe", "#1e40af", "#bfdbfe"),
+            "rule_in":      ("#dcfce7", "#166534", "#86efac"),
+            "rule_out":     ("#fff1f2", "#9f1239", "#fecdd3"),
+            "differentiate":("#e0f2fe", "#0369a1", "#7dd3fc"),
         }
 
         # Build one HTML block — hover reveals questions (no click needed)
         html = '<div class="clinical-gap-header"><span>❓</span> Targeted Questions</div>'
         html += '<style>'
-        html += '.dq-card{position:relative;margin-bottom:0.5rem;border-radius:0.75rem;border:1px solid #e2e8f0;background:#fff;overflow:hidden;transition:box-shadow .2s;}'
-        html += '.dq-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1);}'
-        html += '.dq-header{display:flex;align-items:center;gap:0.5rem;padding:0.65rem 1rem;font-size:0.875rem;font-weight:600;color:#1e293b;cursor:default;}'
-        html += '.dq-questions{max-height:0;overflow:hidden;transition:max-height .35s ease,padding .2s;}'
-        html += '.dq-card:hover .dq-questions{max-height:600px;padding-bottom:0.75rem;}'
-        html += '.dq-q{margin:0 0.75rem 0.5rem;padding:0.65rem 0.9rem;border-radius:0.5rem;border:1px solid;}'
-        html += '.dq-q-text{font-weight:500;font-size:0.875rem;margin-bottom:0.2rem;}'
-        html += '.dq-q-rationale{font-size:0.78rem;color:#64748b;line-height:1.5;}'
-        html += '.dq-q-tag{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:0.3rem;display:inline-block;}'
+        html += '.dq-card{position:relative;margin-bottom:0.55rem;border-radius:0.85rem;border:1px solid rgba(186,230,253,0.7);background:rgba(255,255,255,0.88);overflow:hidden;transition:box-shadow .25s,transform .25s;backdrop-filter:blur(10px);}'
+        html += '.dq-card:hover{box-shadow:0 6px 20px rgba(14,165,233,0.12);transform:translateX(3px);}'
+        html += '.dq-header{display:flex;align-items:center;gap:0.5rem;padding:0.7rem 1rem;font-size:0.85rem;font-weight:700;color:#0369a1;cursor:default;border-bottom:1px solid rgba(186,230,253,0);transition:border-color .25s;}'
+        html += '.dq-card:hover .dq-header{border-bottom-color:rgba(186,230,253,0.5);}'
+        html += '.dq-questions{max-height:0;overflow:hidden;transition:max-height .38s ease,padding .2s;}'
+        html += '.dq-card:hover .dq-questions{max-height:600px;padding-bottom:0.8rem;}'
+        html += '.dq-q{margin:0.35rem 0.75rem 0;padding:0.6rem 0.9rem;border-radius:0.6rem;border:1px solid;}'
+        html += '.dq-q-text{font-weight:600;font-size:0.85rem;margin-bottom:0.25rem;}'
+        html += '.dq-q-rationale{font-size:0.77rem;color:#475569;line-height:1.55;}'
+        html += '.dq-q-tag{font-size:0.64rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-top:0.4rem;display:inline-block;padding:0.12rem 0.4rem;border-radius:4px;background:rgba(0,0,0,0.06);}'
         html += '</style>'
 
         for dq in payload.questions_by_disease:
@@ -950,6 +949,41 @@ with col_right:
             html += '</div></div>'
 
         st.markdown(html, unsafe_allow_html=True)
+
+        # st.markdown strips <script> tags, so inject the scroll behaviour via
+        # st_html (components.v1.html), which runs inside its own iframe and can
+        # reach window.parent to query and scroll the main Streamlit frame.
+        st_html("""
+<script>
+(function() {
+    function attachScroll() {
+        var doc = window.parent.document;
+        var cards = doc.querySelectorAll('.dq-card');
+        if (!cards.length) { setTimeout(attachScroll, 300); return; }
+        cards.forEach(function(card) {
+            // Guard: only attach once
+            if (card._scrollAttached) return;
+            card._scrollAttached = true;
+            card.addEventListener('mouseenter', function() {
+                setTimeout(function() {
+                    var rect = card.getBoundingClientRect();
+                    var cardMid = rect.top + rect.height / 2;
+                    var vh = window.parent.innerHeight;
+                    var delta = cardMid - vh / 2;
+                    window.parent.scrollBy({ top: delta, behavior: 'smooth' });
+                }, 60);
+            });
+        });
+    }
+    // Run once the parent DOM has settled
+    if (document.readyState === 'complete') {
+        attachScroll();
+    } else {
+        window.addEventListener('load', attachScroll);
+    }
+})();
+</script>
+""", height=0)
 if webrtc_ctx.state.playing:
     st.session_state.was_playing = True
     status_placeholder.info("Listening...")
@@ -1004,18 +1038,48 @@ if webrtc_ctx.state.playing:
                         matched_patient_data = data.get_patient_by_id(matched_id)
                         
                         from backend.schemas import PatientHistory as _PH
+                        # Carry forward ALL existing clinical data from the transcript
+                        old_ph = st.session_state.patient_history
                         ph = _PH()
                         if matched_patient_data:
                             ph.patient_name = new_ph.patient_name
-                            ph.symptoms = new_ph.symptoms
-                            ph.risk_factors = matched_patient_data.get("past_medical_history", [])
+                            # Keep symptoms extracted from the conversation
+                            ph.symptoms = list(set(new_ph.symptoms or old_ph.symptoms))
+                            ph.negated_symptoms = list(set(new_ph.negated_symptoms or old_ph.negated_symptoms))
+                            ph.duration = new_ph.duration or old_ph.duration
+                            ph.severity = new_ph.severity or old_ph.severity
+                            # Merge risk factors from JSON + any extracted from conversation
+                            ph.risk_factors = list(set(
+                                matched_patient_data.get("past_medical_history", [])
+                                + (new_ph.risk_factors or [])
+                            ))
                             ph.medications = matched_patient_data.get("current_medications", [])
                             ph.relevant_history = f"**{matched_patient_data.get('name', 'Unknown')}** ({matched_patient_data.get('age', 'N/A')} {matched_patient_data.get('gender', 'N/A')}). "
                             if matched_patient_data.get("allergies") and matched_patient_data["allergies"] != ["None"]:
                                 ph.relevant_history += f"Allergies: {', '.join(matched_patient_data['allergies'])}. "
+                            # Include past visit history for cross-visit intelligence
+                            past_visits = matched_patient_data.get("past_visits", [])
+                            if past_visits:
+                                ph.relevant_history += "Previous visits: "
+                                for visit in past_visits:
+                                    ph.relevant_history += (
+                                        f"[{visit.get('date', 'N/A')}] "
+                                        f"{visit.get('chief_complaint', '')} → "
+                                        f"Dx: {visit.get('diagnosis', '')}. "
+                                        f"Tx: {visit.get('treatment', '')}. "
+                                    )
+                            # Append the AI-generated clinical summary if available
+                            if new_ph.relevant_history:
+                                ph.relevant_history += new_ph.relevant_history
                                 
                         st.session_state.patient_history = ph
                         st.session_state.pipeline = AuraPipeline(initial_history=st.session_state.patient_history)
+                        # Re-run pipeline with full transcript so DDx uses medication context
+                        full_transcript = "".join(st.session_state.transcript)
+                        if full_transcript.strip():
+                            rerun_analysis = st.session_state.pipeline.run(full_transcript)
+                            if rerun_analysis.updateUi:
+                                st.session_state.ai_analysis = rerun_analysis
                         st.rerun()
                 
                 if new_ph != st.session_state.patient_history:

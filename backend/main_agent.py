@@ -16,7 +16,7 @@ from agents.question_strategy import Question
 logger = logging.getLogger(__name__)
 
 # Maximum number of diseases to generate questions for (keeps parallel calls small)
-_QUESTION_TOP_K = 3
+_QUESTION_TOP_K = 5
 
 
 def _patient_to_scorer_inputs(patient: PatientHistory) -> tuple[str, str]:
@@ -29,6 +29,9 @@ def _patient_to_scorer_inputs(patient: PatientHistory) -> tuple[str, str]:
     symptoms_text  = ", ".join(patient.symptoms)
 
     anamnesis_parts = list(patient.risk_factors)
+    # Include medications since they can be risk factors for drug reactions
+    if patient.medications:
+        anamnesis_parts.extend(patient.medications)
     if patient.relevant_history:
         anamnesis_parts.append(patient.relevant_history)
     anamnesis_text = ". ".join(anamnesis_parts)
