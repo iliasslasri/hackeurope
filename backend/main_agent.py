@@ -1,6 +1,6 @@
 """
-agents.py
----------
+main_agent.py
+-------------
 AuraPipeline — orchestrator for the full Aura backend.
 
 Flow per transcript chunk
@@ -23,9 +23,30 @@ import logging
 from backend.schemas import PatientHistory, AuraUIPayload
 from backend.triageGenie import update_patient_async
 from backend.questionGenie import generate_questions_async
-from backend.medicalDiagnosisAgent import MedicalDiagnosisAgent
+
+# FIX Bug 1: correct import path — agents/MedicalDiagnosisAgent.py, not backend/
+import agents  # noqa: F401  — ensures agents/ is on sys.path via agents/__init__.py
+from agents.MedicalDiagnosisAgent import MedicalDiagnosisAgent
 
 logger = logging.getLogger(__name__)
+
+
+def _patient_to_scorer_inputs(patient: PatientHistory) -> tuple[str, str]:
+    """
+    Bridge a structured PatientHistory into the two free-text strings
+    expected by DiagnosisScorer.score(symptoms_text, anamnesis_text).
+
+    The scorer tokenises both strings, so a comma-separated list works well.
+    """
+    symptoms_text  = ", ".join(patient.symptoms)
+
+    anamnesis_parts = list(patient.risk_factors)
+    if patient.relevant_history:
+        anamnesis_parts.append(patient.relevant_history)
+    anamnesis_text = ". ".join(anamnesis_parts)
+
+    return symptoms_text, anamnesis_text
+
 
 class AuraPipeline:
     """
@@ -37,11 +58,13 @@ class AuraPipeline:
     payload  = pipeline.run(transcript_chunk)         # each time new text arrives
     """
 
-    def __init__(self) -> None:
+    def __init__(self, top_k: int = 5) -> None:
         self.patient_history = PatientHistory()
+        self._top_k = top_k
+        # FIX Bug 2: constructor takes (verbose, hf_token), NOT top_k.
         # Initialise once — the scorer loads datasets and builds a semantic index.
         # This is the expensive step (~2-5 s); afterwards every run() call is fast.
-        self._medical_ai = MedicalDiagnosisAgent(top_k=5)
+        self._medical_ai = MedicalDiagnosisAgent(verbose=False)
 
     # ------------------------------------------------------------------
     # Async entrypoint (preferred)
@@ -73,17 +96,26 @@ class AuraPipeline:
 
         self.patient_history = updated_history
 
-        # Step 2 — Run the local Bayesian scorer automatically
-        candidate_diseases = self._medical_ai.generate_candidate_diseases(self.patient_history)
-        ### if we have enough symptoms, we can generate questions
+        # Guard: require at least 3 symptoms before scoring
         if len(self.patient_history.symptoms) < 3:
             return AuraUIPayload(
                 patient_history=self.patient_history,
                 updateUi=False,
             )
 
+        # Step 2 — FIX Bug 3: bridge PatientHistory → scorer strings, then call .diagnose()
+        symptoms_text, anamnesis_text = _patient_to_scorer_inputs(self.patient_history)
+        raw_candidates = self._medical_ai.diagnose(
+            symptoms=symptoms_text,
+            anamnesis=anamnesis_text,
+            top_k=self._top_k,
+        )
+
+        # Extract plain disease names for the downstream questionGenie
+        candidate_diseases: list[str] = [c.disease for c in raw_candidates]
+
         if not candidate_diseases:
-            # Not enough symptoms yet to rank diseases — return partial payload
+            # Not enough symptom signal to rank — return partial payload
             return AuraUIPayload(
                 patient_history=self.patient_history,
                 updateUi=True,

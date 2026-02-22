@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Optional
 
-from agents.medical_dataset import load_dataset
+from agents.medical_dataset import load_datasets
 from agents.scorer          import DiagnosisScorer, CandidateDiagnosis, _normalise
 from agents.updater         import SequentialUpdater
 from agents.question_strategy import Question
@@ -9,7 +9,7 @@ from agents.question_strategy import Question
 class MedicalDiagnosisAgent:
 
     def __init__(self, verbose: bool = True, hf_token: str = ""):
-        self.df, self.dataset_source = load_dataset()
+        self.df, self.dataset_source = load_datasets()
         self.candidates: Optional[List[CandidateDiagnosis]] = None
 
         from agents.semantic_index import SemanticIndex
