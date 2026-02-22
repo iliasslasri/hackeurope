@@ -686,16 +686,170 @@ with col_left:
     render_patient_history()
 
     # ── Voice Recording Button (WebRTC) ───────────────────────────────────────
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.caption("🔴 Live Audio Stream (Transcribes with Gradium - analyzes after 5s silence)")
+    # Centered recording label
+    is_recording = st.session_state.get("was_playing", False)
+    rec_label = "🔴 Recording…" if is_recording else "Press to start consultation"
+    rec_color = "#ef4444" if is_recording else "#94a3b8"
+    st.markdown(
+        f'<div style="text-align:center;font-size:0.82rem;font-weight:500;color:{rec_color};margin-top:1.5rem;">'
+        f'{rec_label}</div>',
+        unsafe_allow_html=True,
+    )
+
     webrtc_ctx = webrtc_streamer(
         key="speech_to_text",
         mode=WebRtcMode.SENDONLY,
         audio_processor_factory=AudioStreamingProcessor,
         rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-        media_stream_constraints={"video": False, "audio": True}
+        media_stream_constraints={"video": False, "audio": True},
     )
+
+    # Hide the WebRTC iframe dynamically but keep it in the DOM so it functions
+    st.markdown("""
+    <style>
+    /* Our custom, native HTML recording button */
+    .aura-record-btn {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        background: #ffffff;
+        border: 5px solid #1e293b;
+        cursor: pointer;
+        padding: 0;
+        margin: 8px auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: none;
+        transition: all 0.2s ease;
+        position: relative;
+    }
+    .aura-record-btn::after {
+        content: "";
+        display: block;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #ef4444;
+        transition: all 0.2s ease;
+    }
+    .aura-record-btn:hover {
+        box-shadow: 0 0 0 6px rgba(239,68,68,0.15);
+        transform: scale(1.05);
+    }
+    .btn-container {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+        margin-top: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
+    # Render our custom native button and a script that explicitly forwards clicks
+    # to the hidden WebRTC iframe's START button.
+    
+    # Conditional styles based on recording state
+    is_rec_str = str(is_recording).lower()
+    button_inner_radius = "8px" if is_recording else "50%"
+    button_inner_size = "24px" if is_recording else "32px"
+    pulse_animation = "animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;" if is_recording else ""
+    hover_scale = "1" if is_recording else "1.05"
+
+    st_html(f"""
+    <div class="btn-container">
+        <button id="aura-trigger" class="aura-record-btn" aria-label="Start Recording">
+            <div class="aura-record-inner"></div>
+        </button>
+    </div>
+    
+    <script>
+    // Actively seek out the WebRTC iframe and hide its container completely
+    function hideWebRTCNative() {{
+        const iframes = window.parent.document.querySelectorAll('iframe');
+        for (let iframe of iframes) {{
+            if (iframe.title && iframe.title.includes('webrtc')) {{
+                if (iframe.parentElement) {{
+                    iframe.parentElement.style.position = 'absolute';
+                    iframe.parentElement.style.opacity = '0';
+                    iframe.parentElement.style.pointerEvents = 'none';
+                    iframe.parentElement.style.height = '1px';
+                    iframe.parentElement.style.width = '1px';
+                    iframe.parentElement.style.overflow = 'hidden';
+                    iframe.parentElement.style.left = '-9999px';
+                }}
+            }}
+        }}
+    }}
+    hideWebRTCNative();
+    setInterval(hideWebRTCNative, 500);
+
+    document.getElementById('aura-trigger').addEventListener('click', function() {{
+        const iframes = window.parent.document.querySelectorAll('iframe');
+        for (let iframe of iframes) {{
+            if (iframe.title && iframe.title.includes('webrtc')) {{
+                try {{
+                    const doc = iframe.contentDocument || iframe.contentWindow.document;
+                    if (!doc) continue;
+                    const btns = doc.querySelectorAll('button');
+                    if (btns.length > 0) {{
+                        btns[0].click();
+                        return;
+                    }}
+                }} catch (e) {{}}
+            }}
+        }}
+    }});
+    </script>
+    
+    <style>
+    body {{ background: transparent !important; margin: 0; overflow: hidden; padding: 10px; }}
+    
+    @keyframes pulse-ring {{
+        0% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }}
+        70% {{ box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }}
+        100% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }}
+    }}
+
+    .aura-record-btn {{
+        width: 72px; 
+        height: 72px; 
+        border-radius: 50%; 
+        background: #ffffff;
+        border: 5px solid #1e293b; 
+        cursor: pointer; 
+        padding: 0; 
+        margin: 10px auto;
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        {pulse_animation}
+    }}
+
+    .aura-record-inner {{
+        width: {button_inner_size}; 
+        height: {button_inner_size}; 
+        border-radius: {button_inner_radius};
+        background: #ef4444; 
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }}
+
+    .aura-record-btn:hover {{ 
+        box-shadow: 0 0 0 6px rgba(239,68,68,0.15); 
+        transform: scale({hover_scale}); 
+    }}
+    
+    .btn-container {{ 
+        display: flex; 
+        justify-content: center; 
+        width: 100%; 
+        height: 100%; 
+        align-items: center; 
+    }}
+    </style>
+    """, height=120)
+
     if webrtc_ctx.state.playing:
         status_placeholder = st.empty()
 

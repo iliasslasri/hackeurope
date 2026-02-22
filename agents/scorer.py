@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 
 RNG        = np.random.default_rng(42)
 MC_SAMPLES = 5_000
-W_SYMPTOMS = 0.65
-W_RISK     = 0.20
-W_PRIOR    = 0.15
+W_SYMPTOMS = 0.5
+W_RISK     = 0.5
+W_PRIOR    = 0
 
 # ---------------------------------------------------------------------------
 # Text helpers (exported so other modules can import them)
