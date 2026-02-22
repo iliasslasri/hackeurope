@@ -151,12 +151,38 @@ class AuraPipeline:
             candidate_diseases=candidate_diseases,
         )
 
+        # Derive a single follow-up question from the generated questions.
+        # Priority: first "rule_in" question from the top-ranked disease,
+        # falling back to the very first question if none is rule_in.
+        follow_up = ""
+        results_list = questions_result.get("results", [])
+        if results_list:
+            for dq in results_list:
+                qs = getattr(dq, "questions", None) or (dq.get("questions", []) if isinstance(dq, dict) else [])
+                for q in qs:
+                    q_target = getattr(q, "target", None) or (q.get("target") if isinstance(q, dict) else None)
+                    q_text = getattr(q, "question", None) or (q.get("question", "") if isinstance(q, dict) else "")
+                    target_val = q_target.value if hasattr(q_target, "value") else str(q_target)
+                    if target_val == "rule_in" and q_text:
+                        follow_up = q_text
+                        break
+                if follow_up:
+                    break
+            # Fallback: first question of the first disease
+            if not follow_up and results_list:
+                first_dq = results_list[0]
+                first_qs = getattr(first_dq, "questions", None) or (first_dq.get("questions", []) if isinstance(first_dq, dict) else [])
+                if first_qs:
+                    first_q = first_qs[0]
+                    follow_up = getattr(first_q, "question", None) or (first_q.get("question", "") if isinstance(first_q, dict) else "")
+
         # Assemble the final payload consumed by the Streamlit frontend
         return AuraUIPayload(
             transcript_chunk=full_transcript,
             patient_history=self.patient_history,
             ddx=ddx_entries,
-            questions_by_disease=questions_result.get("results", []),
+            follow_up_question=follow_up,
+            questions_by_disease=results_list,
             updateUi=True,
         )
 
