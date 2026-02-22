@@ -100,7 +100,7 @@ class AuraPipeline:
         self.patient_history = updated_history
 
         # Guard: require at least 3 symptoms before scoring
-        if len(self.patient_history.symptoms) < 3:
+        if len(self.patient_history.symptoms) < 2:
             return AuraUIPayload(
                 patient_history=self.patient_history,
                 updateUi=False,
