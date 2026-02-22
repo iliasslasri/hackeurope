@@ -460,37 +460,127 @@ with col_left:
     )
     
     if webrtc_ctx.state.playing:
-        st.session_state.was_playing = True
         status_placeholder = st.empty()
-        status_placeholder.info("Listening... (streaming to Gradium API)")
-        
-        while webrtc_ctx.state.playing:
-            if webrtc_ctx.audio_processor:
-                collected_text = False
-                try:
-                    # Drain the queue to get real-time words
-                    while True:
-                        text_item = webrtc_ctx.audio_processor.text_queue.get_nowait()
-                        if text_item and text_item.strip():
-                            st.session_state.transcript.append(text_item.strip() + " ")
-                            collected_text = True
-                except queue.Empty:
-                    pass
-                    
-                if collected_text:
-                    st.session_state.last_speech_time = time.time()
-                    st.session_state.transcript_changed_since_llm = True
-                    # Instantly update the UI placeholder without blocking the thread
-                    render_transcript()
-                    
-                # If 5 seconds of silence happened, auto-analyze
-                if st.session_state.transcript_changed_since_llm and (time.time() - st.session_state.last_speech_time > 1.0):
-                    st.session_state.transcript_changed_since_llm = False
-                    status_placeholder.info("Silence detected. AI is analyzing consultation...")
-                    
-                    # Construct the full_transcript
-                    # full_transcript = "".join(st.session_state.transcript)
-                    full_transcript = """Cardiologist: Good morning. What brings you in today?
+
+# ─── RIGHT: DDx & Clinical Gaps (col-span-2) ────────────────────────────────
+with col_right:
+    payload: AuraUIPayload = st.session_state.ai_analysis
+
+    # ── DDx Tracker ──────────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">Differential Diagnosis (DDx)</div>',
+                unsafe_allow_html=True)
+
+    if payload.ddx:
+        html = ""
+        for entry in payload.ddx:
+            sev = entry.suspicion.value.lower()   # "high" / "medium" / "low"
+            cls = sev if sev in ("high", "medium", "low") else "low"
+            html += f"""
+            <div class="ddx-card {cls}">
+                <span class="condition">{entry.disease}</span>
+                <span class="ddx-badge {cls}">{sev.capitalize()}</span>
+            </div>"""
+        st.markdown(html, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="ddx-card low" style="opacity:.4; cursor:default">
+            <span class="condition" style="color:#94a3b8; font-weight:400">
+            Awaiting transcript data…</span>
+        </div>""", unsafe_allow_html=True)
+
+    # ── Clinical Gap / Follow-up Question ────────────────────────────────────
+    st.markdown("""
+    <div class="clinical-gap-header">
+        <span>💡</span> Clinical Gap Identified
+    </div>""", unsafe_allow_html=True)
+
+    if payload.follow_up_question:
+        st.markdown(
+            f'<div class="clinical-gap-card"><p>{payload.follow_up_question}</p></div>',
+            unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="clinical-gap-card" style="opacity:.5">
+            <p>Clinical gaps will appear here as the consultation progresses.</p>
+        </div>""", unsafe_allow_html=True)
+
+    # ── Safety Issues ────────────────────────────────────────────────────────
+    if payload.safety_issues:
+        st.markdown("""
+        <div class="clinical-gap-header">
+            <span>⚠️</span> Safety Review
+        </div>""", unsafe_allow_html=True)
+        for issue in payload.safety_issues:
+            st.markdown(f"""
+            <div class="ddx-card high">
+                <span class="condition">{issue}</span>
+            </div>""", unsafe_allow_html=True)
+
+    # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
+    if payload.questions_by_disease:
+        st.markdown("""
+        <div class="clinical-gap-header">
+            <span>❓</span> Targeted Questions
+        </div>""", unsafe_allow_html=True)
+
+        for dq in payload.questions_by_disease:
+            with st.expander(f"🔬 {dq.disease}", expanded=False):
+                for q in dq.questions:
+                    target_colors = {
+                        "rule_in": ("#dcfce7", "#166534", "#bbf7d0"),
+                        "rule_out": ("#fee2e2", "#991b1b", "#fecaca"),
+                        "differentiate": ("#dbeafe", "#1e40af", "#bfdbfe"),
+                    }
+                    bg, fg, border = target_colors.get(
+                        q.target.value, ("#f1f5f9", "#334155", "#e2e8f0"))
+                    st.markdown(f"""
+                    <div style="background:{bg}; border:1px solid {border};
+                                border-radius:0.5rem; padding:0.75rem 1rem;
+                                margin-bottom:0.5rem;">
+                        <div style="font-weight:500; color:{fg}; font-size:0.9rem;
+                                    margin-bottom:0.25rem;">
+                            {q.question}
+                        </div>
+                        <div style="font-size:0.8rem; color:#64748b; line-height:1.5;">
+                            {q.clinical_rationale}
+                        </div>
+                        <span style="font-size:0.7rem; font-weight:600;
+                                     color:{fg}; text-transform:uppercase;
+                                     letter-spacing:0.05em;">
+                            {q.target.value.replace('_', ' ')}
+                        </span>
+                    </div>""", unsafe_allow_html=True)
+if webrtc_ctx.state.playing:
+    st.session_state.was_playing = True
+    status_placeholder.info("Listening... (streaming to Gradium API)")
+    
+    while webrtc_ctx.state.playing:
+        if webrtc_ctx.audio_processor:
+            collected_text = False
+            try:
+                # Drain the queue to get real-time words
+                while True:
+                    text_item = webrtc_ctx.audio_processor.text_queue.get_nowait()
+                    if text_item and text_item.strip():
+                        st.session_state.transcript.append(text_item.strip() + " ")
+                        collected_text = True
+            except queue.Empty:
+                pass
+                
+            if collected_text:
+                st.session_state.last_speech_time = time.time()
+                st.session_state.transcript_changed_since_llm = True
+                # Instantly update the UI placeholder without blocking the thread
+                render_transcript()
+                
+            # If 5 seconds of silence happened, auto-analyze
+            if st.session_state.transcript_changed_since_llm and (time.time() - st.session_state.last_speech_time > 1.0):
+                st.session_state.transcript_changed_since_llm = False
+                status_placeholder.info("Silence detected. AI is analyzing consultation...")
+                
+                # Construct the full_transcript
+                # full_transcript = "".join(st.session_state.transcript)
+                full_transcript = """Cardiologist: Good morning. What brings you in today?
 
 Patient: Hi, Doctor. I've been having some chest discomfort over the past few days.
 
@@ -524,103 +614,13 @@ Patient: Is it serious?
 
 Cardiologist: It could be a sign of reduced blood flow to the heart, but we'll confirm with tests. The important thing is that you came in early. We'll take good care of you.
 """
-                    st.session_state.ai_analysis.updateUi = True
-                    new_analysis = st.session_state.pipeline.run(full_transcript)
-                    print("new_analysis", new_analysis)
-                    if new_analysis.updateUi:
-                        st.session_state.ai_analysis = new_analysis
-                    st.rerun()
-                    
-            time.sleep(0.1)
-    else:
-        st.session_state.was_playing = False
-
-
-# ─── RIGHT: DDx & Clinical Gaps (col-span-2) ────────────────────────────────
-with col_right:
-    payload: AuraUIPayload = st.session_state.ai_analysis
-
-    # ── DDx Tracker ──────────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Differential Diagnosis (DDx)</div>',
-                unsafe_allow_html=True)
-
-    if payload.updateUi and payload.ddx:
-        html = ""
-        for entry in payload.ddx:
-            sev = entry.suspicion.value.lower()   # "high" / "medium" / "low"
-            cls = sev if sev in ("high", "medium", "low") else "low"
-            html += f"""
-            <div class="ddx-card {cls}">
-                <span class="condition">{entry.disease}</span>
-                <span class="ddx-badge {cls}">{sev.capitalize()}</span>
-            </div>"""
-        st.markdown(html, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="ddx-card low" style="opacity:.4; cursor:default">
-            <span class="condition" style="color:#94a3b8; font-weight:400">
-            Awaiting transcript data…</span>
-        </div>""", unsafe_allow_html=True)
-
-    # ── Clinical Gap / Follow-up Question ────────────────────────────────────
-    st.markdown("""
-    <div class="clinical-gap-header">
-        <span>💡</span> Clinical Gap Identified
-    </div>""", unsafe_allow_html=True)
-
-    if payload.updateUi and payload.follow_up_question:
-        st.markdown(
-            f'<div class="clinical-gap-card"><p>{payload.follow_up_question}</p></div>',
-            unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="clinical-gap-card" style="opacity:.5">
-            <p>Clinical gaps will appear here as the consultation progresses.</p>
-        </div>""", unsafe_allow_html=True)
-
-    # ── Safety Issues ────────────────────────────────────────────────────────
-    if payload.updateUi and payload.safety_issues:
-        st.markdown("""
-        <div class="clinical-gap-header">
-            <span>⚠️</span> Safety Review
-        </div>""", unsafe_allow_html=True)
-        for issue in payload.safety_issues:
-            st.markdown(f"""
-            <div class="ddx-card high">
-                <span class="condition">{issue}</span>
-            </div>""", unsafe_allow_html=True)
-
-    # ── Per-Disease Questions (QuestionGenie) ────────────────────────────────
-    if payload.updateUi and payload.questions_by_disease:
-        st.markdown("""
-        <div class="clinical-gap-header">
-            <span>❓</span> Targeted Questions
-        </div>""", unsafe_allow_html=True)
-
-        for dq in payload.questions_by_disease:
-            with st.expander(f"🔬 {dq.disease}", expanded=False):
-                for q in dq.questions:
-                    target_colors = {
-                        "rule_in": ("#dcfce7", "#166534", "#bbf7d0"),
-                        "rule_out": ("#fee2e2", "#991b1b", "#fecaca"),
-                        "differentiate": ("#dbeafe", "#1e40af", "#bfdbfe"),
-                    }
-                    bg, fg, border = target_colors.get(
-                        q.target.value, ("#f1f5f9", "#334155", "#e2e8f0"))
-                    st.markdown(f"""
-                    <div style="background:{bg}; border:1px solid {border};
-                                border-radius:0.5rem; padding:0.75rem 1rem;
-                                margin-bottom:0.5rem;">
-                        <div style="font-weight:500; color:{fg}; font-size:0.9rem;
-                                    margin-bottom:0.25rem;">
-                            {q.question}
-                        </div>
-                        <div style="font-size:0.8rem; color:#64748b; line-height:1.5;">
-                            {q.clinical_rationale}
-                        </div>
-                        <span style="font-size:0.7rem; font-weight:600;
-                                     color:{fg}; text-transform:uppercase;
-                                     letter-spacing:0.05em;">
-                            {q.target.value.replace('_', ' ')}
-                        </span>
-                    </div>""", unsafe_allow_html=True)
+                new_analysis = st.session_state.pipeline.run(full_transcript)
+                new_analysis.updateUi = True
+                print("new_analysis", new_analysis)
+                if new_analysis.updateUi:
+                    st.session_state.ai_analysis = new_analysis
+                st.rerun()
+                
+        time.sleep(0.1)
+else:
+    st.session_state.was_playing = False
