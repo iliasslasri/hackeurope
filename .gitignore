@@ -15,3 +15,6 @@ __pycache__/
 # Streamlit
 streamlit_output.log
 streamlit.pid
+
+*.pem
+.gitignore

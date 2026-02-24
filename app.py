@@ -89,16 +89,6 @@ def _merge_ddx(
 
     return result
 
-def transcribe_audio(audio_bytes):
-    url = "https://api.elevenlabs.io/v1/speech-to-text"
-    headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY", "")}
-    files = {"file": ("audio.wav", audio_bytes, "audio/wav")}
-    payload = {"model_id": "scribe_v1"}
-    try:
-        resp = requests.post(url, headers=headers, files=files, data=payload)
-        return resp.json().get("text", "") if resp.status_code == 200 else f"[Transcription Failed: {resp.text}]"
-    except Exception as e:
-        return f"[Transcription Error: {e}]"
 
 st.set_page_config(
     page_title="Aura - Clinical Decision Support",
