@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "datasets>=4.5.0",
+    "gtts>=2.5.4",
     "huggingface-hub>=1.4.1",
+    "mistralai[realtime]>=1.12.4",
     "numpy==1.26.4",
     "pandas>=2.3.3",
     "pydantic>=2.12.5",
